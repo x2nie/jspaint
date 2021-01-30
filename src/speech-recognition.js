@@ -198,6 +198,7 @@ const recognitionFixes = [
 	["use lime with", "use line width"],
 	["line width v", "line width 5"],
 	["quick save", "click save"],
+	[/^safe$/, "save"],
 
 	// addressing actions by menu they're in
 	["dial neal", "file new"],
