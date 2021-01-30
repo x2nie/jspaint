@@ -197,6 +197,7 @@ const recognitionFixes = [
 	["you slime with", "use line width"],
 	["use lime with", "use line width"],
 	["line width v", "line width 5"],
+	["quick save", "click save"],
 
 	// addressing actions by menu they're in
 	["dial neal", "file new"],
@@ -1636,7 +1637,7 @@ window.interpret_command = (input_text, default_to_entering_text)=> {
 		}
 		// console.log(button, button_text, button_text_phrases);
 		for (const button_text_phrase of button_text_phrases) {
-			const match_phrases = [button_text_phrase, `click ${button_text_phrase}`, `click on ${button_text_phrase}`];
+			const match_phrases = [button_text_phrase, `hit ${button_text_phrase}`, `press ${button_text_phrase}`, `click ${button_text_phrase}`, `click on ${button_text_phrase}`];
 			for (const match_phrase of match_phrases) {
 				// console.log(match_phrase, ` ${command} `.toLowerCase().indexOf(` ${match_phrase.toLowerCase()} `));
 				if (` ${input_text} `.toLowerCase().indexOf(` ${match_phrase.toLowerCase()} `) !== -1) {
