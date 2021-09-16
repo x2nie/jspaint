@@ -941,6 +941,35 @@ window.menus = {
 					description: localize("Makes JS Paint look a bit more modern."),
 				},
 				{
+					item: localize("W&in 311"),
+					speech_recognition: [
+						"reset theme", "revert theme setting",
+						"win3.1.1 theme", "switch to win3.1.1 theme", "use win3.1.1 theme", "set theme to win3.1.1", "set theme win3.1.1", "switch to win3.1.1 theme", "switch theme to win3.1.1", "switch theme win3.1.1",
+						"ancient theme", "switch to ancient theme", "use ancient theme", "set theme to ancient", "set theme ancient", "switch to ancient theme", "switch theme to ancient", "switch theme ancient",
+						"normal theme", "switch to normal theme", "use normal theme", "set theme to normal", "set theme normal", "switch to normal theme", "switch theme to normal", "switch theme normal",
+						"default theme", "switch to default theme", "use default theme", "set theme to default", "set theme default", "switch to default theme", "switch theme to default", "switch theme default",
+						"original theme", "switch to original theme", "use original theme", "set theme to original", "set theme original", "switch to original theme", "switch theme to original", "switch theme original",
+						"win3.1.1 theme", "switch to win3.1.1 theme", "use win3.1.1 theme", "set theme to win3.1.1", "set theme win3.1.1", "switch to win3.1.1 theme", "switch theme to win3.1.1", "switch theme win3.1.1",
+						"3.1.1 theme", "switch to 3.1.1 theme", "use 3.1.1 theme", "set theme to 3.1.1", "set theme 3.1.1", "switch to 3.1.1 theme", "switch theme to 3.1.1", "switch theme 3.1.1",
+						"windows 3.1.1 theme", "switch to windows 3.1.1 theme", "use windows 3.1.1 theme", "set theme to windows 3.1.1", "set theme windows 3.1.1", "switch to windows 3.1.1 theme", "switch theme to windows 3.1.1", "switch theme windows 3.1.1",
+						"windows 3.1.1 theme", "switch to windows 3.1.1 theme", "use windows 3.1.1 theme", "set theme to windows 3.1.1", "set theme windows 3.1.1", "switch to windows 3.1.1 theme", "switch theme to windows 3.1.1", "switch theme windows 3.1.1",
+						"windows 2000 theme", "switch to windows 2000 theme", "use windows 2000 theme", "set theme to windows 2000", "set theme windows 2000", "switch to windows 2000 theme", "switch theme to windows 2000", "switch theme windows 2000",
+						// in contrast to the Dark theme:
+						"light theme", "switch to light theme", "use light theme", "set theme to light", "set theme light", "switch to light theme", "switch theme to light", "switch theme light",
+						"light mode", "switch to light mode", "use light mode", "set mode to light", "set mode light", "switch to light mode", "switch mode to light", "switch mode light",
+						"bright theme", "switch to bright theme", "use bright theme", "set theme to bright", "set theme bright", "switch to bright theme", "switch theme to bright", "switch theme bright",
+						"bright mode", "switch to bright mode", "use bright mode", "set mode to bright", "set mode bright", "switch to bright mode", "switch mode to bright", "switch mode bright",
+						"day theme", "switch to day theme", "use day theme", "set theme to day", "set theme day", "switch to day theme", "switch theme to day", "switch theme day",
+						"day mode", "switch to day mode", "use day mode", "set mode to day", "set mode day", "switch to day mode", "switch mode to day", "switch mode day",
+						"go light", "go bright",
+					],
+					action: ()=> {
+						set_theme("win31.css");
+					},
+					enabled: () => get_theme() != "win31.css",
+					description: localize("Makes JS Paint look like MS Paint from Windows 3.1.1."),
+				},
+				{
 					item: localize("&Winter"),
 					speech_recognition: [
 						"winter theme", "switch to winter theme", "use winter theme", "set theme to winter", "set theme winter", "switch to winter theme", "switch theme to winter", "switch theme winter",

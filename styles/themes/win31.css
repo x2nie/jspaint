@@ -1,0 +1,46 @@
+@import "./classic.css";
+/* @import "./vista-esque-midnight-green.css"; */
+
+:root {
+	--theme-loaded: "win31.css";
+    --ButtonFace: #bfc6ce;
+}
+.tools{
+    width: 52px;
+    height: 168px;
+}
+.tool {
+    /* background: lime; */
+    border:none;
+    margin-top: 1px;
+    margin-left: 1px;
+    width: 23px;
+    height: 20px;
+    box-shadow: 
+        0px -1px 0 black,
+        -1px 0px 0 black,
+        1px 0px 0 black,
+        0px 1px 0 black
+        ;
+}
+.tool::before{
+    border-right-width: 2px;
+    border-bottom-width: 2px;
+}
+
+/* pushed */
+.tool:hover:active,
+.tool.selected {
+    border-right: none;
+    border-bottom: none;
+    border-top-color:  var(--ButtonShadow);
+    border-left-color:  var(--ButtonShadow);
+}
+.tool:hover:active:before, .tool.selected:before{
+    border:none;
+}
+
+.tool span {
+    top: 2px !important;
+    left: 3px !important;
+}
