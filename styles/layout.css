@@ -18,6 +18,14 @@ html, body, .jspaint {
 }
 .jspaint {
 	direction: ltr;
+	
+	box-sizing: border-box; /* for iPad fullscreen workaround, which adds padding to .jspaint; without this it hides the status bar */
+
+	/* prevent selection, especially for Safari on iOS/iPad, which likes to select random (nearest, kind of?) elements when long-pressing */
+	-webkit-user-select: none;
+	-moz-user-select: none;
+	-ms-user-select: none;
+	user-select: none;
 }
 .chooser-option {
 	display: flex;
@@ -91,8 +99,15 @@ html, body, .jspaint {
 .window:not(.squish) {
 	white-space: nowrap;
 }
-.component-area,
-.tool-window .window-titlebar {
+/* reset the above to avoid .tracky-mouse-error-message getting clipped (when webcam in use for example) */
+.tracky-mouse-window .tracky-mouse-canvas-overlay {
+	white-space: normal;
+}
+/* fix overlapped min/max labels and barely clickable slider due to 98.css slider styles */
+.tracky-mouse-labeled-slider {
+	height: 20px;
+}
+.component-area {
 	-webkit-user-select: none;
 	-moz-user-select: none;
 	-ms-user-select: none;
@@ -106,6 +121,10 @@ html, body, .jspaint {
 .component-area {
 	display: flex;
 	flex: 0 0 auto;
+	-webkit-user-select: none;
+	-moz-user-select: none;
+	-ms-user-select: none;
+	user-select: none;
 }
 
 .selection,
@@ -126,12 +145,22 @@ html, body, .jspaint {
 .selection > canvas {
 	/* @TODO: maybe don't include the canvas in the DOM (is it helpful to inspect it tho? it's not critical...) */
 	opacity: 0;
+	/* Fix draggable part of selection going outside the selection selection is vertically thin */
+	position: absolute;
+	left: 0;
+	top: 0;
 }
 .selection > img,
 .selection > canvas,
 .helper-layer > canvas {
 	width: 100%;
 	height: 100%;
+}
+.helper-layer > canvas {
+	/* Fix helper layer canvas going off the main canvas when main canvas is vertically thin */
+	position: absolute;
+	left: 0;
+	top: 0;
 }
 .resize-ghost,
 .component-ghost {
@@ -155,44 +184,11 @@ html, body, .jspaint {
 	color: rgba(255, 0, 255, 0.5) !important;
 }*/
 
-.menu-container {
-	position: relative;
-}
-.menu-popup {
-	position: absolute;
-	top: 100%;
-	left: 0;
-	z-index: 5002; /* 50-5000 reserved for subwindows, which dynamically increase z-index */
-	box-sizing: border-box;
-}
-.menu-popup-table {
-	border-collapse: collapse;
-}
-.menu-item {
-	white-space: nowrap;
-}
-.menu-hr {
-	display: block !important;
-	height: 0;
-	width: auto;
-}
-.menu-hotkey {
-	display: inline !important;
-}
-.menu-item-checkbox-area,
-.menu-item-submenu-area {
-	min-width: 16px;
-}
-.menu-item-checkbox-area,
-.menu-item-submenu-area {
-	text-align: center;
-}
-
 .status-area {
+	display: flex;
 	overflow: hidden;
 	white-space: nowrap;
 	cursor: default;
-	height: 1.25em;
 }
 .status-text {
 	flex-basis: auto;
@@ -205,101 +201,132 @@ html, body, .jspaint {
 	flex: 0 0 114px;
 	min-width: 0px;
 	padding-left: 3px;
-	border-left: 1px solid #7b7b7b;
 }
 
-.hover-halo {
-	pointer-events: none;
-	z-index: 1000000;
-	box-shadow: 0 0 10px yellow, 0 0 3px yellow;
-}
-.dwell-indicator {
-	position: fixed;
-	pointer-events: none;
-	z-index: 1000000;
-}
-.dwell-indicator::after {
-	content: "";
-	display: block;
-	position: absolute;
-	background: red;
-	left: 2px;
-	top: 2px;
-	right: 2px;
-	bottom: 2px;
-}
-.dwell-indicator:not(.for-release) {
-	background: yellow;
-}
-.dwell-indicator.for-release {
-	background: white;
-}
-.dwell-indicator:not(.for-release),
-.dwell-indicator:not(.for-release)::after {
-	border-radius: 50%;
-}
-.dwell-indicator.for-release,
-.dwell-indicator.for-release::after {
-	clip-path: polygon(30% 0%, 70% 0%, 100% 30%, 100% 70%, 70% 100%, 30% 100%, 0% 70%, 0% 30%);
-}
-.eye-gaze-mode .color-button {
+.enlarge-ui .color-button {
 	width: 25px;
 	height: 25px;
 }
-.eye-gaze-mode .colors-component.tall {
+.enlarge-ui .colors-component.tall {
 	width: 50px;
 }
-.eye-gaze-mode .colors-component.tall .color-box {
+.enlarge-ui .colors-component.tall .color-box {
 	width: 100%;
 }
-.eye-gaze-mode .colors-component.tall .current-colors {
+.enlarge-ui .colors-component.tall .current-colors {
 	width: 100%;
 }
-.eye-gaze-mode .colors-component.tall .foreground-color {
+.enlarge-ui .colors-component.tall .foreground-color {
 	left: 12px;
 }
-.eye-gaze-mode .colors-component.tall .background-color {
+.enlarge-ui .colors-component.tall .background-color {
 	right: 12px;
 }
+.enlarge-ui .colors-component.wide {
+	height: 50px;
+}
+.enlarge-ui .colors-component.wide .color-box {
+	height: 100%;
+}
+.enlarge-ui .colors-component.wide .current-colors {
+	height: 100%;
+}
+.enlarge-ui .colors-component.wide .foreground-color {
+	top: 12px;
+}
+.enlarge-ui .colors-component.wide .background-color {
+	bottom: 12px;
+}
 
-.eye-gaze-mode .os-window .window-titlebar,
-.eye-gaze-mode .tool-window .window-titlebar {
+/* more specific .tool-window selectors are needed to override titlebar height currently defined in classic.css */
+.enlarge-ui .os-window .window-titlebar,
+.enlarge-ui .os-window.tool-window .window-titlebar {
 	font-size: 2rem;
 	line-height: 1.2;
 	height: 2.8rem;
 }
-.eye-gaze-mode .os-window .window-title-area,
-.eye-gaze-mode .tool-window .window-title-area {
+.enlarge-ui .os-window .window-title-area,
+.enlarge-ui .os-window.tool-window .window-title-area {
 	height: 100%;
 }
-.eye-gaze-mode .os-window .window-titlebar button,
-.eye-gaze-mode .tool-window .window-titlebar button {
+.enlarge-ui .os-window .window-titlebar button {
 	transform: scale(3);
 	margin-right: 32px;
 }
-.eye-gaze-mode .tool-window .window-titlebar button {
+.enlarge-ui .tool-window .window-titlebar button {
 	transform-origin: 0 0;
 }
 
-.eye-gaze-mode .menu-button {
+.enlarge-ui .menu-button {
 	padding-right: 10px;
 	padding-left: 10px;
 }
-.eye-gaze-mode .menu-button {
+.enlarge-ui .menu-button {
 	height: 3rem;
 	line-height: 2.5rem;
 }
-.eye-gaze-mode .menu-button,
-.eye-gaze-mode .menu-button * {
+.enlarge-ui .menu-button,
+.enlarge-ui .menu-button * {
 	font-size: 2rem;
 }
-.eye-gaze-mode .menu-item * {
+.enlarge-ui .menu-item * {
 	font-size: 2rem;
 	line-height: 1.5;
 }
+.enlarge-ui .menu-item-checkbox-area::after,
+.enlarge-ui .menu-item-submenu-area::after {
+	width: 1.2em;
+	height: 1.2em;
+	mask-size: 1.2em 1.2em;
+	-webkit-mask-size: 1.2em 1.2em;
+}
 
-.eye-gaze-mode .status-area {
-	padding-left: 170px;
+/* sigh, trying to move two things in a similar way but padding does look a bit better for the status area (esp. in Bubblegum theme),
+whereas it breaks component docking calculations if used to shift the colors box */
+.status-area {
+	padding-left: var(--floating-buttons-width);
+}
+.component-area.bottom {
+	margin-left: var(--floating-buttons-width);
+}
+.floating-buttons {
+	position: fixed;
+	bottom: 0;
+	left: 0;
+	transform-origin: bottom left;
+	transform: scale(2);
+	/* Go on top of canvas if both left/bottom docking areas are empty */
+	z-index: 1;
+	/* They're not within .jspaint currently */
+	-webkit-user-select: none;
+	-moz-user-select: none;
+	-ms-user-select: none;
+	user-select: none;
+}
+.enlarge-ui .floating-buttons {
+	transform: scale(3);
+}
+.floating-buttons button {
+	width: 28px;
+	height: 28px;
+	vertical-align: bottom;
+	position: relative;
+}
+.floating-buttons .button-icon {
+	position: absolute;
+	left: 0;
+	top: 0;
+	width: 24px;
+	height: 24px;
+}
+
+.menu-button {
+	/* @TODO: make this part of os-gui */
+	white-space: nowrap;
+}
+.menus {
+	/* @TODO: make this part of os-gui; note that Explorer does overflow differently though */
+	flex-wrap: wrap;
 }
 
 .component-area {
@@ -429,6 +456,9 @@ html, body, .jspaint {
 	display: grid;
 	grid-template-columns: repeat(8, 16px);
 	grid-gap: 5px 9px;
+	-webkit-user-select: none;
+	-moz-user-select: none;
+	-ms-user-select: none;
 	user-select: none;
 	margin-left: 8px/*rtl:ignore*/;
 }
@@ -519,7 +549,7 @@ html, body, .jspaint {
 .edit-colors-window .result-color-canvas {
 	margin-top: 4px;
 }
-/* WET layout code for small viewports and eye gaze mode */
+/* WET layout code for small viewports and Enlarge UI mode */
 /* could do it cleaner with JavaScript or CSS preprocessor */
 @media (max-width: 450px) {
 	.edit-colors-window {
@@ -535,17 +565,17 @@ html, body, .jspaint {
 		display: none !important;
 	}
 }
-/* WET layout code for small viewports and eye gaze mode */
-.eye-gaze-mode .edit-colors-window {
+/* WET layout code for small viewports and Enlarge UI mode */
+.enlarge-ui .edit-colors-window {
 	overflow: hidden;
 }
-.eye-gaze-mode .edit-colors-window.defining-custom-colors .left-side {
+.enlarge-ui .edit-colors-window.defining-custom-colors .left-side {
 	/* display: none !important; */
 	/* this element is determining the height */
 	width: 0;
 	visibility: hidden;
 }
-.eye-gaze-mode .edit-colors-window:not(.defining-custom-colors) .right-side {
+.enlarge-ui .edit-colors-window:not(.defining-custom-colors) .right-side {
 	display: none !important;
 }
 
@@ -566,17 +596,25 @@ html, body, .jspaint {
 	max-width: 230px;
 	float: right;
 	margin: 5px;
-    box-sizing: border-box;
+	box-sizing: border-box;
 }
-.save-as .window-content > form > div > label:last-of-type {
+.save-as .window-content > form > div > label:not(:first-of-type) {
 	margin-top: 8px;
 }
 .save-as .window-content {
-	margin-top: 10px;
-	margin-bottom: 10px;
+	padding-top: 10px;
+	padding-bottom: 10px;
 }
 .save-as .button-group button {
 	margin: 5px;
+}
+
+.font-box {
+	display: flex;
+	flex-flow: row;
+	align-items: center;
+	margin: 4px 7px; /* not measured, just guessed */
+	gap: 10px;
 }
 
 .canvas-area {
@@ -591,27 +629,21 @@ html, body, .jspaint {
 	position: absolute;
 	z-index: 2;
 }
-.handle {
+.canvas-area .handle {
 	position: absolute;
 	width: 3px;
 	height: 3px;
 	z-index: 1;
+	pointer-events: none; /* important for Dwell Clicker mode */
 }
-.handle::after {
-	/* make handles way easier to grab */
-	content: "";
-	pointer-events: all; /* @TODO: maybe don't have a blanket pointer-events: none; on pseudo elements */
-	display: block;
+.grab-region {
+	/* the grab-region make handles way easier to grab by extending outside the visual representation of the handle */
 	position: absolute;
-	left: 50%;
-	top: 50%;
-	transform: translate(-50%, -50%);
-	width: 32px;
-	height: 32px;
-	max-width: inherit;
-	max-height: inherit;
-	/*background: rgba(255, 255, 0, 0.5);*/ /* debug */
+	/*background: rgba(255, 0, 0, 0.5);*/ /* debug */
 }
+/* .grab-region.is-middle { */
+	/*background: rgba(255, 255, 0, 0.5);*/ /* debug */
+/* } */
 .textbox::before {
 	/* allow dragging textbox */
 	/* In mspaint the border drawn around selections and textboxes extends out from them,
@@ -629,18 +661,6 @@ html, body, .jspaint {
 	/*background: orange;*/ /* debug */
 }
 
-
-.tool-window .window-title {
-	display: inline-block !important;
-	margin: 0;
-	padding: 0;
-	cursor: default;
-}
-.tool-window .window-close-button {
-	display: block !important;
-	float: right;
-}
-
 .window-content .button-group {
 	display: flex;
 	flex: 0 0 auto;
@@ -655,32 +675,62 @@ html, body, .jspaint {
 	display: flex;
 	flex-flow: row;
 }
-.dialogue-window .window-content > form {
+.window:not(.edit-colors-window) .window-content > form {
+	direction: ltr;
+}
+.horizontal-buttons .window-content > form {
 	flex-flow: column;
 }
-.dialogue-window .window-content > form > .button-group {
+.horizontal-buttons .window-content > form > .button-group {
 	display: flex;
 	flex-flow: row;
 	justify-content: flex-end;
+	gap: 5px;
+	margin: 5px;
+	margin-bottom: 10px;
 }
-.dialogue-window .window-content > form > div:first-child {
+.horizontal-buttons .window-content > form > div:first-child {
 	padding: 5px;
 }
 
 .stretch-and-skew .window-content,
 .flip-and-rotate .window-content,
-.convert-to-black-and-white .window-content {
+.convert-to-black-and-white .window-content,
+.component-window .window-content {
 	direction: ltr;
 }
+
+.dialog-window:not(.horizontal-buttons):not(.edit-colors-window) .window-content {
+	padding: 10px;
+}
+.dialog-window:not(.horizontal-buttons):not(.edit-colors-window) .window-content .button-group {
+	padding-left: 10px;
+	display: flex;
+	flex-direction: column;
+	gap: 5px;
+}
+
 .flip-and-rotate fieldset {
 	width: 200px;
+}
+.flip-and-rotate fieldset > label {
+	display: flex !important; /* overriding `.window:not(.edit-colors-window) .window-content label` */
+}
+.flip-and-rotate input:disabled {
+	/* pointer events already can't get received on disabled input elements,
+	but this lets them be received on a parent,
+	in order to enable the element */
+	pointer-events: none;
 }
 .flip-and-rotate .sub-options {
 	padding-left: 30px;
 }
+.flip-and-rotate .radio-wrapper {
+	width: fit-content;
+}
 
 /* Fix label ordering for RTL layout (display inline labels can get super out of order with the checkboxes/inputs - very confusing!) */
-.window-content label {
+.window:not(.edit-colors-window):not(.tracky-mouse-window) .window-content label {
 	display: inline-flex;
 	flex-direction: row;
 	direction: ltr;
@@ -689,9 +739,52 @@ html, body, .jspaint {
 .attributes-window .window-content {
 	direction: ltr;
 }
+.attributes-window table {
+	margin-bottom: 5px;
+}
+.attributes-window input[type="number"] {
+	margin-left: 5px; /* separate label from input for Width and Height fields */
+}
+.attributes-window table ~ label ~ label {
+	margin-left: 10px; /* separate Width and Height fields */
+}
 .attributes-window fieldset {
+	margin-top: 5px;
+}
+.attributes-window fieldset .fieldset-body {
+	display: grid;
+	grid-template-columns: calc(80px * 2) 80px;
+}
+.attributes-window fieldset:first-of-type .fieldset-body {
+	grid-template-columns: 80px 80px 80px;
+}
+
+.custom-zoom-window .current-zoom {
+	margin: 10px 15px;
+}
+.custom-zoom-window fieldset {
+	margin: 8px;
+	padding: 0;
+}
+.custom-zoom-window .fieldset-body {
 	display: flex;
-	justify-content: space-around; /* this isn't really what the layout is like in mspaint, but it spaces things out at least */
+	flex-flow: column wrap;
+	width: 240px;
+	height: 70px;
+	padding: 12px 5px;
+	row-gap: 10px;
+}
+.custom-zoom-window bdi {
+	margin: 0 10px;
+}
+.custom-zoom-window input[name="really-custom-zoom-input"] {
+	width: 50px;
+}
+
+.radio-field {
+	display: flex;
+	flex-flow: row;
+	align-items: center;
 }
 
 /* @TODO: part of os-gui */
@@ -712,13 +805,23 @@ html, body, .jspaint {
 	flex: 1;
 	display: flex;
 	flex-flow: row;
+	height: 0; /* fixes an overflow issue with small window height, where the iframe and contents tree would be sized based on the intrinsic height of the contents tree */
 }
 .help-window .toolbar button {
 	width: 55px;
 	height: 40px;
 	padding: 0;
+}
+.help-window .toolbar button span {
+	display: inline-flex;
+	position: absolute;
+	bottom: 0;
+	left: 0;
+	right: 0;
+	/* flex centering + preventing overflow wrap means the font can be too big and it'll still stay centered */
 	font-size: 12px;
-	line-height: 60px;
+	white-space: pre;
+	justify-content: center;
 }
 .help-window .toolbar button {
 	position: relative;
@@ -778,14 +881,14 @@ html, body, .jspaint {
 	vertical-align: middle;
 	width: 16px;
 	height: 16px;
-	background-position: 0 0;
+	background-position: 0 0/*rtl:ignore*/;
 	margin-right: 2px;
 }
 .help-window .folder.expanded:before {
-	background-position: -16px 0;
+	background-position: -16px 0/*rtl:ignore*/;
 }
 .help-window .page:before {
-	background-position: -32px 0;
+	background-position: -32px 0/*rtl:ignore*/;
 }
 
 .dragging iframe {
@@ -817,6 +920,9 @@ html, body, .jspaint {
 	margin-left: 15px;
 }
 
+.history-window .window-content {
+	direction: ltr;
+}
 .history-view {
 	width: 500px;
 	height: 500px;
@@ -824,6 +930,7 @@ html, body, .jspaint {
 	max-height: calc(100vh - 100px);
 	overflow: auto;
 	position: relative; /* needed for offsetTop to work relative to the top of the list (rather than the window) */
+	direction: ltr;
 }
 .history-entry {
 	cursor: pointer;
@@ -846,8 +953,13 @@ html, body, .jspaint {
 	text-decoration: underline;
 }
 
+/* TODO: reduce scope of this rule, and remove exception(s) to it */
 ::before, ::after {
 	pointer-events: none;
+}
+/* Quick fix for clicking directly on the radio button in themes which use styles from 98.css */
+input[type="radio"] + label::before {
+	pointer-events: all;
 }
 
 .cursor-bully * {
@@ -857,34 +969,53 @@ html, body, .jspaint {
 #about-paint-header {
 	display: flex;
 	flex-direction: row;
+	flex-wrap: wrap;
 	margin: 0;
-	margin-top: 30px;
+	margin-top: 10px;
 	margin-bottom: 10px;
 }
+#about-paint-beside-icon {
+	margin: auto 10px;
+}
 #jspaint-project-name {
-	margin-left: 10px;
-	margin-right: 8px;
 	white-space: nowrap;
+	font-size: 2rem;
+	margin: 0;
 }
 #jspaint-version {
-	/* @TODO: separate into a shared.css? (not really layout!) */
-	font-size: 0.6em;
-	color: #7b7b7b;
+	/* @TODO: separate some of this into a shared.css? (not all layout!) */
+	white-space: nowrap;
+	font-size: 1.4rem;
+	font-weight: normal;
 }
 #maybe-outdated-line {
 	font-style: italic;
-	height: 2em;
+	line-height: 1;
+	/* min-height avoids a flaky test where sometimes the element blackout is visible and sometimes not depending on whether the news had been loaded when the test runs */
+	min-height: 1em;
+	/* top margin is almost just to separate blackout regions for clarity in the visual test snapshots */
+	margin-top: 3px;
 }
-#view-project-news {
-	margin: auto;
-	margin-right: 40px;
-	width: 150px;
-	min-height: 2.2em;
+#view-project-news,
+#close-about-paint {
+	margin: auto; /* for right-alignment AND avoiding stretching to height of the container */
+	margin-right: 0;
+	width: 100px;
+	min-height: 2.2rem;
+}
+#close-about-paint {
+	float: right;
+	margin-bottom: 10px;
 }
 
 #news {
 	max-height: 500px;
 	overflow: auto;
+	-webkit-user-select: text;
+	-moz-user-select: text;
+	-ms-user-select: text;
+	user-select: text;
+	cursor: auto;
 }
 @media (max-height: 550px) {
 	#news {
@@ -952,11 +1083,88 @@ html, body, .jspaint {
 	}
 }
 
+/* For Safari on iPad, Fullscreen mode overlays the system bar, completely obscuring our menu bar. */
+/* This adds a spacer to the top of the page, styled with the title bar gradient, to prevent that. */
+/* Only show this if the device is tall enough that this won't cause any problems (fullscreen is important for fitting the color palette on the screen on some phones) */
+:root {
+	--ios-title-bar-height: 21px; /* this is what looks good to my eye, there's not a hard line in the overlay, just text/symbols, and I didn't measure the system bar in a case where it has a background */
+	/* hope it doesn't change! */
+}
+@media (min-height: 450px) {
+	.ios.fullscreen .jspaint {
+		padding-top: var(--ios-title-bar-height);
+	}
+	.ios.fullscreen .jspaint::before {
+		content: "";
+		position: absolute;
+		top: 0;
+		left: 0;
+		right: 0;
+		height: var(--ios-title-bar-height);
+	}
+	/* That works, but now the exit fullscreen button (which we also can't change) obscures the menu bar. */
+	/* So center the menu bar contents, that'll look nice. */
+	/* .ios.fullscreen .menus {
+		justify-content: center;
+	}
+	/* Ugh no, then the three dots button (multitasking menu) at the top of the system menu steals taps from the menu bar. */
+	/* Just shift it over by a fixed amount. */
+	/* This lets it sit in between the exit button and the three dots button,
+	at least on a 9th generation iPad with software version 15.0.2 (this is a very fragile workaround) */
+	.ios.fullscreen .menus {
+		padding-left: 100px;
+	}
+	/* Also nudge the tools downward to avoid the exit fullscreen button */
+	/* (not if it's in a window, only if it's docked) */
+	/* (I considered using `.ios.fullscreen .horizontal > .component-area:first-child`
+	so that it's not affected by the transform in Enlarge UI mode,
+	but it wants tweaking in that case anyways due to the menu bar being bigger */
+	.ios.fullscreen .component-area .tools-component {
+		padding-top: 40px;
+	}
+	/* Not so much in Enlarge UI mode, where it's scaled with transform,
+	and where the menu bar takes more of the space reserved for the exit fullscreen button */
+	.ios.fullscreen .enlarge-ui .component-area .tools-component {
+		padding-top: 10px;
+	}
+}
+
 select.inset-deep {
 	background-position: top 0px right 0px;
 	padding-right: 16px;
 }
 
-[touch-action="none"] {
-	touch-action: none;
+progress {
+	width: 291px;
+	height: 20px;
+	box-sizing: border-box;
+}
+
+details pre {
+	margin: 0;
+	margin-top: 5px;
+	-webkit-user-select: text;
+	-moz-user-select: text;
+	-ms-user-select: text;
+	user-select: text;
+}
+
+details {
+	margin-top: 8px;
+}
+summary {
+	-webkit-user-select: none;
+	-moz-user-select: none;
+	-ms-user-select: none;
+	user-select: none;
+	cursor: pointer;
+}
+
+.too-big-soon-gif {
+	transition: transform 0.2s;
+	transform-origin: 0% 100%;
+	image-rendering: optimizeQuality;
+}
+.menu-item:not(.highlight) .too-big-soon-gif {
+	transform: scale(0.6);
 }

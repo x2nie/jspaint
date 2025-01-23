@@ -1,206 +1,347 @@
+// @ts-check
+// eslint-disable-next-line no-unused-vars
+/* global airbrush_size:writable, brush_shape:writable, brush_size:writable, button:writable, ctrl:writable, eraser_size:writable, fill_color:writable, pick_color_slot:writable, history_node_to_cancel_to:writable, MenuBar:writable, my_canvas_height:writable, my_canvas_width:writable, palette:writable, pencil_size:writable, pointer:writable, pointer_active:writable, pointer_buttons:writable, pointer_over_canvas:writable, pointer_previous:writable, pointer_start:writable, pointer_type:writable, pointers:writable, reverse:writable, shift:writable, stroke_color:writable, stroke_size:writable, update_helper_layer_on_pointermove_active:writable */
+/* global AccessKeys, current_history_node, default_airbrush_size, default_brush_shape, default_brush_size, default_canvas_height, default_canvas_width, default_eraser_size, default_magnification, default_pencil_size, default_stroke_size, enable_fs_access_api, file_name, get_direction, localize, magnification, main_canvas, main_ctx, return_to_tools, selected_colors, selected_tool, selected_tools, selection, systemHooks, textbox, transparency */
 
-const default_magnification = 1;
-const default_tool = get_tool_by_id(TOOL_PENCIL);
+import { $ColorBox } from "./$ColorBox.js";
+import { $ToolBox } from "./$ToolBox.js";
+import { Handles } from "./Handles.js";
+// import { get_direction, localize } from "./app-localization.js";
+import { default_palette, get_winter_palette } from "./color-data.js";
+import { image_formats } from "./file-format-data.js";
+import { $this_version_news, cancel, change_some_url_params, change_url_param, clear, confirm_overwrite_capability, delete_selection, deselect, edit_copy, edit_cut, edit_paste, file_new, file_open, file_save, file_save_as, get_tool_by_id, get_uris, image_attributes, image_flip_and_rotate, image_invert_colors, image_stretch_and_skew, load_image_from_uri, make_or_update_undoable, open_from_file, paste, paste_image_from_file, redo, render_history_as_gif, reset_canvas_and_history, reset_file, reset_selected_colors, resize_canvas_and_save_dimensions, resize_canvas_without_saving_dimensions, save_as_prompt, select_all, select_tool, select_tools, set_magnification, show_document_history, show_error_message, show_news, show_resource_load_error_message, toggle_grid, undo, update_canvas_rect, update_disable_aa, update_helper_layer, update_magnified_canvas_size, view_bitmap, write_image_file } from "./functions.js";
+import { show_help } from "./help.js";
+import { $G, E, TAU, get_file_extension, get_help_folder_icon, is_discord_embed, make_canvas, to_canvas_coords } from "./helpers.js";
+import { init_webgl_stuff, rotate } from "./image-manipulation.js";
+import { menus } from "./menus.js";
+import { showMessageBox } from "./msgbox.js";
+import { stopSimulatingGestures } from "./simulate-random-gestures.js";
+import { disable_speech_recognition, enable_speech_recognition, trace_and_sketch_stop } from "./speech-recognition.js";
+import { localStore } from "./storage.js";
+import { get_theme, set_theme } from "./theme.js";
+import { TOOL_AIRBRUSH, TOOL_BRUSH, TOOL_CURVE, TOOL_ELLIPSE, TOOL_ERASER, TOOL_LINE, TOOL_PENCIL, TOOL_POLYGON, TOOL_RECTANGLE, TOOL_ROUNDED_RECTANGLE, TOOL_SELECT, tools } from "./tools.js";
 
-const default_canvas_width = 683;
-const default_canvas_height = 384;
-let my_canvas_width = default_canvas_width;
-let my_canvas_height = default_canvas_height;
+// #region Exports
 
-let aliasing = true;
-let transparency = false;
-let monochrome = false;
+// Q: Why are the exports at the top of the file?
+// A: The exports are scattered throughout the file, exactly where they
+//    were implicitly being exported before transitioning to ESM.
+//    For function declarations at the top level, this means the start of the file.
+//    For let/const, this means the line after the declaration.
+//    This is a temporary solution to resolve circular dependencies.
+//    For instance, $ToolBox uses $left/$right. If $left/$right were exported
+//    at the bottom of this file, an error would occur. This is because $ToolBox
+//    is instantiated in the middle of this file (but after $left/$right are declared).
+// @TODO: Minimize global variables and exports from app.js
+window.update_fill_and_stroke_colors_and_lineWidth = update_fill_and_stroke_colors_and_lineWidth;
+window.tool_go = tool_go;
 
-let magnification = default_magnification;
-let return_to_magnification = 4;
+// #endregion
 
-const canvas = make_canvas();
-canvas.classList.add("main-canvas");
-const ctx = canvas.ctx;
 
-const default_palette = [
-	"rgb(0,0,0)", // Black
-	"rgb(128,128,128)", // Dark Gray
-	"rgb(128,0,0)", // Dark Red
-	"rgb(128,128,0)", // Pea Green
-	"rgb(0,128,0)", // Dark Green
-	"rgb(0,128,128)", // Slate
-	"rgb(0,0,128)", // Dark Blue
-	"rgb(128,0,128)", // Lavender
-	"rgb(128,128,64)", //
-	"rgb(0,64,64)", //
-	"rgb(0,128,255)", //
-	"rgb(0,64,128)", //
-	"rgb(64,0,255)", //
-	"rgb(128,64,0)", //
+// #region System Hooks and default implementations
 
-	"rgb(255,255,255)", // White
-	"rgb(192,192,192)", // Light Gray
-	"rgb(255,0,0)", // Bright Red
-	"rgb(255,255,0)", // Yellow
-	"rgb(0,255,0)", // Bright Green
-	"rgb(0,255,255)", // Cyan
-	"rgb(0,0,255)", // Bright Blue
-	"rgb(255,0,255)", // Magenta
-	"rgb(255,255,128)", //
-	"rgb(0,255,128)", //
-	"rgb(128,255,255)", //
-	"rgb(128,128,255)", //
-	"rgb(255,0,128)", //
-	"rgb(255,128,64)", //
-];
-const monochrome_palette_as_colors = [
-	"rgb(0,0,0)",
-	"rgb(9,9,9)",
-	"rgb(18,18,18)",
-	"rgb(27,27,27)",
-	"rgb(37,37,37)",
-	"rgb(46,46,46)",
-	"rgb(55,55,55)",
-	"rgb(63,63,63)",
-	"rgb(73,73,73)",
-	"rgb(82,82,82)",
-	"rgb(92,92,92)",
-	"rgb(101,101,101)",
-	"rgb(110,110,110)",
-	"rgb(119,119,119)",
+/**
+ * @param {string} extension
+ * @returns {`.${string}`}
+ */
+const prependDot = (extension) => `.${extension}`;
+/**
+ * @param {FileFormat} format
+ * @returns {string}
+ */
+const getMimeType = (format) => "mimeType" in format ? format.mimeType : `application/x-${format.formatID}`;
 
-	"rgb(255,255,255)",
-	"rgb(250,250,250)",
-	"rgb(242,242,242)",
-	"rgb(212,212,212)",
-	"rgb(201,201,201)",
-	"rgb(191,191,191)",
-	"rgb(182,182,182)",
-	"rgb(159,159,159)",
-	"rgb(128,128,128)",
-	"rgb(173,173,173)",
-	"rgb(164,164,164)",
-	"rgb(155,155,155)",
-	"rgb(146,146,146)",
-	"rgb(137,137,137)",
-];
-let palette = default_palette;
-let polychrome_palette = palette;
-let monochrome_palette = make_monochrome_palette();
+// Note: JSDoc type annotations don't seem to actually work on window.*
+/**
+ * @type {SystemHooks}
+ * The methods in systemHooks can be overridden by a containing page like 98.js.org which hosts jspaint in a same-origin iframe.
+ * This allows integrations like setting the wallpaper as the background of the host page, or saving files to a server.
+ * This API may be removed at any time (and perhaps replaced by something based around postMessage)
+ * The API is documented in the README.md file.
+ */
+window.systemHooks = window.systemHooks || {};
+/** @type {SystemHooks} */
+window.systemHookDefaults = {
+	// named to be distinct from various platform APIs (showSaveFilePicker, saveAs, electron's showSaveDialog; and saveFile is too ambiguous)
+	// could call it saveFileAs maybe but then it'd be weird that you don't pass in the file directly
+	showSaveFileDialog: async ({ formats, defaultFileName, defaultPath, defaultFileFormatID, getBlob, savedCallbackUnreliable, dialogTitle }) => {
 
-// https://github.com/kouzhudong/win2k/blob/ce6323f76d5cd7d136b74427dad8f94ee4c389d2/trunk/private/shell/win16/comdlg/color.c#L38-L43
-// These are a fallback in case colors are not recieved from some driver.
-// const default_basic_colors = [
-// 	"#8080FF", "#80FFFF", "#80FF80", "#80FF00", "#FFFF80", "#FF8000", "#C080FF", "#FF80FF",
-// 	"#0000FF", "#00FFFF", "#00FF80", "#40FF00", "#FFFF00", "#C08000", "#C08080", "#FF00FF",
-// 	"#404080", "#4080FF", "#00FF00", "#808000", "#804000", "#FF8080", "#400080", "#8000FF",
-// 	"#000080", "#0080FF", "#008000", "#408000", "#FF0000", "#A00000", "#800080", "#FF0080",
-// 	"#000040", "#004080", "#004000", "#404000", "#800000", "#400000", "#400040", "#800040",
-// 	"#000000", "#008080", "#408080", "#808080", "#808040", "#C0C0C0", "#400040", "#FFFFFF",
-// ];
-// Grabbed with Color Cop from the screen with Windows 98 SE running in VMWare
-const basic_colors = [
-	"#FF8080", "#FFFF80", "#80FF80", "#00FF80", "#80FFFF", "#0080FF", "#FF80C0", "#FF80FF",
-	"#FF0000", "#FFFF00", "#80FF00", "#00FF40", "#00FFFF", "#0080C0", "#8080C0", "#FF00FF",
-	"#804040", "#FF8040", "#00FF00", "#008080", "#004080", "#8080FF", "#800040", "#FF0080",
-	"#800000", "#FF8000", "#008000", "#008040", "#0000FF", "#0000A0", "#800080", "#8000FF",
-	"#400000", "#804000", "#004000", "#004040", "#000080", "#000040", "#400040", "#400080",
-	"#000000", "#808000", "#808040", "#808080", "#408080", "#C0C0C0", "#400040", "#FFFFFF",
-];
-let custom_colors = [
-	"#FFFFFF", "#FFFFFF", "#FFFFFF", "#FFFFFF", "#FFFFFF", "#FFFFFF", "#FFFFFF", "#FFFFFF",
-	"#FFFFFF", "#FFFFFF", "#FFFFFF", "#FFFFFF", "#FFFFFF", "#FFFFFF", "#FFFFFF", "#FFFFFF",
-];
+		// Note: showSaveFilePicker currently doesn't support suggesting a filename,
+		// or retrieving which file type was selected in the dialog (you have to get it (guess it) from the file name)
+		// In particular, some formats are ambiguous with the file name, e.g. different bit depths of BMP files.
+		// So, it's a tradeoff with the benefit of overwriting on Save.
+		// https://developer.mozilla.org/en-US/docs/Web/API/Window/showSaveFilePicker
+		// Also, if you're using accessibility options Speech Recognition or Dwell Clicker,
+		// `showSaveFilePicker` fails based on a notion of it not being a "user gesture".
+		// `saveAs` will likely also fail on the same basis,
+		// but at least in chrome, there's a "Downloads Blocked" icon with a popup where you can say Always Allow.
+		// I can't detect when it's allowed or blocked, but `saveAs` has a better chance of working,
+		// so for Speech Recognition and Dwell Clicker, I set a global flag temporarily to disable File System Access API (window.untrusted_gesture).
+		if (window.showSaveFilePicker && !window.untrusted_gesture && enable_fs_access_api) {
+			// We can't get the selected file type, not even from newHandle.getFile()
+			// so limit formats shown to a set that can all be used by their unique file extensions
+			// formats = formats_unique_per_file_extension(formats);
+			// OR, show two dialogs, one for the format and then one for the save location.
+			const { newFileFormatID } = await save_as_prompt({ dialogTitle, defaultFileName, defaultFileFormatID, formats, promptForName: false });
+			const new_format = formats.find((format) => format.formatID === newFileFormatID);
+			const blob = await getBlob(new_format && new_format.formatID);
+			formats = [new_format];
+			let newHandle;
+			let newFileName;
+			try {
+				newHandle = await showSaveFilePicker({
+					types: formats.map((format) => {
+						return {
+							description: format.name,
+							accept: {
+								[getMimeType(format)]: format.extensions.map(prependDot),
+							},
+						};
+					}),
+				});
+				newFileName = newHandle.name;
+				const newFileExtension = get_file_extension(newFileName);
+				const doItAgain = async (message) => {
+					const button_value = await showMessageBox({
+						message: `${message}\n\nTry adding .${new_format.extensions[0]} to the name. Sorry about this.`,
+						iconID: "error",
+						buttons: [
+							{
+								label: localize("Save As"), // or "Retry"
+								value: "show-save-as-dialog-again",
+								default: true,
+							},
+							{
+								label: localize("Save"), // or "Ignore"
+								value: "save-without-extension",
+							},
+							{
+								label: localize("Cancel"), // or "Abort"
+								value: "cancel",
+							},
+						],
+					});
+					if (button_value === "show-save-as-dialog-again") {
+						return window.systemHookDefaults.showSaveFileDialog({
+							formats,
+							defaultFileName,
+							defaultPath,
+							defaultFileFormatID,
+							getBlob,
+							savedCallbackUnreliable,
+							dialogTitle,
+						});
+					} else if (button_value === "save-without-extension") {
+						// @TODO: DRY
+						const writableStream = await newHandle.createWritable();
+						await writableStream.write(blob);
+						await writableStream.close();
+						savedCallbackUnreliable?.({
+							newFileName: newFileName,
+							newFileFormatID: new_format && new_format.formatID,
+							newFileHandle: newHandle,
+							newBlob: blob,
+						});
+					} else {
+						// user canceled save
+					}
+				};
+				if (!newFileExtension) {
+					// return await doItAgain(`Missing file extension.`);
+					return await doItAgain(`'${newFileName}' doesn't have an extension.`);
+				}
+				if (!new_format.extensions.includes(newFileExtension)) {
+					// Closest translation: "Paint cannot save to the same filename with a different file type."
+					// return await doItAgain(`Wrong file extension for selected file type.`);
+					return await doItAgain(`File extension '.${newFileExtension}' does not match the selected file type ${new_format.name}.`);
+				}
+				// const new_format =
+				// 	get_format_from_extension(formats, newHandle.name) ||
+				// 	formats.find((format)=> format.formatID === defaultFileFormatID);
+				// const blob = await getBlob(new_format && new_format.formatID);
+				const writableStream = await newHandle.createWritable();
+				await writableStream.write(blob);
+				await writableStream.close();
+			} catch (error) {
+				if (error.name === "AbortError") {
+					// user canceled save
+					return;
+				}
+				// console.warn("Error during showSaveFileDialog (for showSaveFilePicker; now falling back to saveAs)", error);
+				// newFileName = (newFileName || file_name || localize("untitled"))
+				// 	.replace(/\.(bmp|dib|a?png|gif|jpe?g|jpe|jfif|tiff?|webp|raw)$/i, "") +
+				// 	"." + new_format.extensions[0];
+				// saveAs(blob, newFileName);
+				if (error.message.match(/gesture|activation/)) {
+					// show_error_message("Your browser blocked the file from being saved, because you didn't use the mouse or keyboard directly to save. Try looking for a Downloads Blocked icon and say Always Allow, or save again with the keyboard or mouse.", error);
+					show_error_message("Sorry, due to browser security measures, you must use the keyboard or mouse directly to save.");
+					return;
+				}
+				show_error_message(localize("Failed to save document."), error);
+				return;
+			}
+			savedCallbackUnreliable?.({
+				newFileName: newFileName,
+				newFileFormatID: new_format && new_format.formatID,
+				newFileHandle: newHandle,
+				newBlob: blob,
+			});
+		} else {
 
-// declared like this for Cypress tests
-window.default_brush_shape = "circle";
-window.default_brush_size = 4;
-window.default_eraser_size = 8;
-window.default_airbrush_size = 9;
-window.default_pencil_size = 1;
-window.default_stroke_size = 1; // applies to lines, curves, shape outlines
-// declared like this for Cypress tests
-window.brush_shape = default_brush_shape;
-window.brush_size = default_brush_size
-window.eraser_size = default_eraser_size;
-window.airbrush_size = default_airbrush_size;
-window.pencil_size = default_pencil_size;
-window.stroke_size = default_stroke_size; // applies to lines, curves, shape outlines
-let tool_transparent_mode = false;
+			const { newFileName, newFileFormatID } = await save_as_prompt({ dialogTitle, defaultFileName, defaultFileFormatID, formats });
+			const blob = await getBlob(newFileFormatID);
+			saveAs(blob, newFileName);
+			savedCallbackUnreliable?.({
+				newFileName,
+				newFileFormatID,
+				newFileHandle: null,
+				newBlob: blob,
+			});
+		}
+	},
+	showOpenFileDialog: async ({ formats }) => {
+		if (window.untrusted_gesture) {
+			// We can't show a file picker RELIABLY.
+			// FIXME: double error message
+			show_error_message("Sorry, a file picker cannot be shown when using Speech Recognition or Dwell Clicker. You must click File > Open directly with the mouse, or press Ctrl+O on the keyboard.");
+			throw new Error("can't show file picker reliably");
+		}
+		if (window.showOpenFilePicker && enable_fs_access_api) {
+			const [fileHandle] = await window.showOpenFilePicker({
+				types: formats.map((format) => {
+					return {
+						description: format.name,
+						accept: {
+							[getMimeType(format)]: format.extensions.map(prependDot),
+						},
+					};
+				}),
+			});
+			const file = await fileHandle.getFile();
+			return { file, fileHandle };
+		} else {
+			// @TODO: specify mime types?
+			return new Promise((resolve) => {
+				const $input = /** @type {JQuery<HTMLInputElement>} */($("<input type='file'>")
+					.on("change", () => {
+						resolve({ file: $input[0].files[0] });
+						$input.remove();
+					})
+					.appendTo($app)
+					.hide()
+					.trigger("click")
+				);
+			});
+		}
+	},
+	writeBlobToHandle: async (save_file_handle, blob) => {
+		if (save_file_handle && save_file_handle.createWritable && enable_fs_access_api) {
+			const acknowledged = await confirm_overwrite_capability();
+			if (!acknowledged) {
+				return false;
+			}
+			try {
+				const writableStream = await save_file_handle.createWritable();
+				await writableStream.write(blob);
+				await writableStream.close();
+				return true;
+			} catch (error) {
+				if (error.name === "AbortError") {
+					// user canceled save (this might not be a real error code that can occur here)
+					return false;
+				}
+				if (error.name === "NotAllowedError") {
+					// use didn't give permission to save
+					// is this too much of a warning?
+					show_error_message(localize("Save was interrupted, so your file has not been saved."), error);
+					return false;
+				}
+				if (error.name === "SecurityError") {
+					// not in a user gesture ("User activation is required to request permissions.")
+					saveAs(blob, file_name);
+					return undefined;
+				}
+			}
+		} else {
+			saveAs(blob, file_name);
+			// hopefully if the page reloads/closes the save dialog/download will persist and succeed?
+			return undefined;
+		}
+	},
+	readBlobFromHandle: async (file_handle) => {
+		if (file_handle && file_handle.getFile) {
+			const file = await file_handle.getFile();
+			return file;
+		} else {
+			throw new Error(`Unknown file handle (${file_handle})`);
+			// show_error_message(`${localize("Failed to open document.")}\n${localize("An unsupported operation was attempted.")}`, error);
+		}
+	},
+	setWallpaperTiled: (canvas) => {
+		const wallpaperCanvas = make_canvas(screen.width, screen.height);
+		const pattern = wallpaperCanvas.ctx.createPattern(canvas, "repeat");
+		wallpaperCanvas.ctx.fillStyle = pattern;
+		wallpaperCanvas.ctx.fillRect(0, 0, wallpaperCanvas.width, wallpaperCanvas.height);
 
-let stroke_color;
-let fill_color;
-let stroke_color_k = "foreground"; // enum of "foreground", "background", "ternary"
-let fill_color_k = "background"; // enum of "foreground", "background", "ternary"
-
-let selected_tool = default_tool;
-let selected_tools = [selected_tool];
-let return_to_tools = [selected_tool];
-window.colors = { // declared like this for Cypress tests
-	foreground: "",
-	background: "",
-	ternary: "",
+		systemHooks.setWallpaperCentered(wallpaperCanvas);
+	},
+	setWallpaperCentered: (canvas) => {
+		systemHooks.showSaveFileDialog({
+			dialogTitle: localize("Save As"),
+			defaultFileName: `${file_name.replace(/\.(bmp|dib|a?png|gif|jpe?g|jpe|jfif|tiff?|webp|raw)$/i, "")} wallpaper.png`,
+			defaultFileFormatID: "image/png",
+			formats: image_formats,
+			getBlob: (new_file_type) => {
+				return new Promise((resolve) => {
+					write_image_file(canvas, new_file_type, (blob) => {
+						resolve(blob);
+					});
+				});
+			},
+		});
+	},
 };
 
-let selection; //the one and only OnCanvasSelection
-let textbox; //the one and only OnCanvasTextBox
-let helper_layer; //the OnCanvasHelperLayer for the grid and tool previews
-let show_grid = false;
-let text_tool_font = {
-	family: '"Arial"', // should be an exact value detected by Font Detective
-	size: 12,
-	line_scale: 20 / 12,
-	bold: false,
-	italic: false,
-	underline: false,
-	vertical: false,
-	color: "",
-	background: "",
-};
+for (const [key, defaultValue] of Object.entries(window.systemHookDefaults)) {
+	window.systemHooks[key] = window.systemHooks[key] || defaultValue;
+}
 
-let root_history_node = make_history_node({name: "App Not Loaded Properly - Please send a bug report."}); // will be replaced
-let current_history_node = root_history_node;
-let history_node_to_cancel_to = null;
-/** array of history nodes */
-let undos = [];
-/** array of history nodes */
-let redos = [];
+// #endregion
 
-let file_name;
-let document_file_path;
-let saved = true;
-let file_name_chosen = false;
+// #region URL Params
+const update_from_url_params = () => {
+	// Dwell Clicker
+	// (Head Tracker implies Dwell Clicker for now, but could be made independent if Tracky Mouse supports other modes in the future.)
+	if (location.hash.match(/dwell-clicker|head-tracker/i)) {
+		if (!$("body").hasClass("dwell-clicker-mode")) {
+			$("body").addClass("dwell-clicker-mode");
+			$G.triggerHandler("dwell-clicker-toggled");
+		}
+	} else {
+		if ($("body").hasClass("dwell-clicker-mode")) {
+			$("body").removeClass("dwell-clicker-mode");
+			$G.triggerHandler("dwell-clicker-toggled");
+		}
+	}
 
-/** works in canvas coordinates */
-let pointer;
-/** works in canvas coordinates */
-let pointer_start;
-/** works in canvas coordinates */
-let pointer_previous;
-
-let pointer_active = false;
-let pointer_type, pointer_buttons;
-let reverse;
-let ctrl;
-let button;
-let pointer_over_canvas = false;
-let update_helper_layer_on_pointermove_active = false;
-
-/** works in client coordinates */
-let pointers = [];
-
-const update_from_url_params = ()=> {
-	if (location.hash.match(/eye-gaze-mode/i)) {
-		if (!$("body").hasClass("eye-gaze-mode")) {
-			$("body").addClass("eye-gaze-mode");
-			$G.triggerHandler("eye-gaze-mode-toggled");
+	// Enlarge UI
+	if (location.hash.match(/enlarge-ui/i)) {
+		if (!$("body").hasClass("enlarge-ui")) {
+			$("body").addClass("enlarge-ui");
+			$G.triggerHandler("enlarge-ui-toggled");
 			$G.triggerHandler("theme-load"); // signal layout change
 		}
 	} else {
-		if ($("body").hasClass("eye-gaze-mode")) {
-			$("body").removeClass("eye-gaze-mode");
-			$G.triggerHandler("eye-gaze-mode-toggled");
+		if ($("body").hasClass("enlarge-ui")) {
+			$("body").removeClass("enlarge-ui");
+			$G.triggerHandler("enlarge-ui-toggled");
 			$G.triggerHandler("theme-load"); // signal layout change
 		}
 	}
 
-	if (location.hash.match(/vertical-color-box-mode|eye-gaze-mode/i)) {
+	// Vertical Color Box Mode
+	if (location.hash.match(/vertical-color-box-mode/i)) {
 		if (!$("body").hasClass("vertical-color-box-mode")) {
 			$("body").addClass("vertical-color-box-mode");
 			$G.triggerHandler("vertical-color-box-mode-toggled");
@@ -214,143 +355,442 @@ const update_from_url_params = ()=> {
 		}
 	}
 
-	if (location.hash.match(/speech-recognition-mode/i)) {
-		window.enable_speech_recognition && enable_speech_recognition();
+	// Quick Undo Button
+	if (location.hash.match(/easy-undo/i)) {
+		if (!$("body").hasClass("easy-undo-mode")) {
+			$("body").addClass("easy-undo-mode");
+			$G.triggerHandler("easy-undo-mode-toggled");
+			$G.triggerHandler("theme-load"); // signal layout change (just copying pattern thoughtlessly)
+		}
 	} else {
-		window.disable_speech_recognition && disable_speech_recognition();
+		if ($("body").hasClass("easy-undo-mode")) {
+			$("body").removeClass("easy-undo-mode");
+			$G.triggerHandler("easy-undo-mode-toggled");
+			$G.triggerHandler("theme-load"); // signal layout change (just copying pattern thoughtlessly)
+		}
+	}
+
+	// Head Tracker Mode
+	if (location.hash.match(/head-tracker/i)) {
+		if (!$("body").hasClass("head-tracker-mode")) {
+			$("body").addClass("head-tracker-mode");
+			$G.triggerHandler("head-tracker-toggled");
+		}
+	} else {
+		if ($("body").hasClass("head-tracker-mode")) {
+			$("body").removeClass("head-tracker-mode");
+			$G.triggerHandler("head-tracker-toggled");
+		}
+	}
+
+	// Speech Recognition Mode
+	if (location.hash.match(/speech-recognition-mode/i)) {
+		enable_speech_recognition();
+	} else {
+		disable_speech_recognition();
+	}
+
+	// Developer helpers to compare with reference screenshots of MS Paint
+	// (Seems like the color box is getting (un)shifted when this is enabled, making it line up less than it should?
+	// like the code "// Nudge the Colors component over a tiny bit" is applying and then being reset.)
+	$("body").toggleClass("compare-reference", !!location.hash.match(/compare-reference/i));
+	$("body").toggleClass("compare-reference-tool-windows", !!location.hash.match(/compare-reference-tool-windows/i));
+	setTimeout(() => {
+		if (location.hash.match(/compare-reference/i)) { // including compare-reference-tool-windows
+			select_tool(get_tool_by_id(TOOL_SELECT));
+			const test_canvas_width = 576;
+			const test_canvas_height = 432;
+			if (main_canvas.width !== test_canvas_width || main_canvas.height !== test_canvas_height) {
+				// Unfortunately, right now this can cause a reverse "Save changes?" dialog,
+				// where Discard will restore your drawing, Cancel will discard it, and Save will save a blank canvas,
+				// because the load from storage happens after this resize.
+				// But this is just a helper for development, so it's not a big deal.
+				// are_you_sure here doesn't help, either.
+				// are_you_sure(() => {
+				resize_canvas_without_saving_dimensions(test_canvas_width, test_canvas_height);
+				// });
+			}
+			if (!location.hash.match(/compare-reference-tool-windows/i)) {
+				$toolbox.dock($left);
+				$colorbox.dock($bottom);
+				window.debugKeepMenusOpen = false;
+			}
+		}
+		if (location.hash.match(/compare-reference-tool-windows/i)) {
+			$toolbox.undock_to(84, 35);
+			$colorbox.undock_to(239, 195);
+			window.debugKeepMenusOpen = true;
+			// $(".help-menu-button").click(); // have to trigger pointerdown/up, it doesn't respond to click
+			// $(".help-menu-button").trigger("pointerdown").trigger("pointerup"); // and it doesn't use jQuery
+			$(".help-menu-button")[0].dispatchEvent(new Event("pointerdown"));
+			$(".help-menu-button")[0].dispatchEvent(new Event("pointerup"));
+			$("[aria-label='About Paint']")[0].dispatchEvent(new Event("pointerenter"));
+		}
+	}, 500);
+
+	// dev helper to open Project News window to preview news write-up
+	// I'm naming this "force-open-project-news" and not simply "project-news"
+	// because I'm not handling closing the window, and I don't want it to sound
+	// super friendly.
+	// I did go on a tangent of making it a proper UI navigation URL hash,
+	// and binding the window state to the URL state (bidirectionally),
+	// but I'm not sure how it should work with the back button.
+	// It's probably nice on mobile for the back button to close windows,
+	// but I'd want it to be consistent between all the windows of the app.
+	if (location.hash.match(/force-open-project-news/i)) {
+		if (!$(".news-window:visible").length) {
+			show_news();
+		}
 	}
 };
 update_from_url_params();
 $G.on("hashchange popstate change-url-params", update_from_url_params);
 
 // handle backwards compatibility URLs
-if (location.search.match(/eye-gaze-mode/)) {
-	change_url_param("eye-gaze-mode", true, {replace_history_state: true});
+// Eye Gaze Mode was a monolithic feature that has been since been split into smaller features.
+// We can maintain backwards compatibility with the old URL param by mapping it to the new features.
+// (BTW: Eye Gaze Mode never included an actual eye tracker (instead relying on external software),
+// but if I added that as a feature I could call the feature Eye Tracker, so it wouldn't be too confusing.)
+if (location.search.match(/eye-gaze-mode/) || location.hash.match(/eye-gaze-mode/)) {
+	change_some_url_params({
+		"eye-gaze-mode": false,
+		"enlarge-ui": true,
+		"dwell-clicker": true,
+		"vertical-color-box-mode": true,
+		"easy-undo": true,
+	}, { replace_history_state: true });
 	update_from_url_params();
 }
 if (location.search.match(/vertical-colors?-box/)) {
-	change_url_param("vertical-color-box", true, {replace_history_state: true});
+	change_url_param("vertical-color-box", true, { replace_history_state: true });
 	update_from_url_params();
 }
 
+// #endregion
+
+// #region App UI
+
 const $app = $(E("div")).addClass("jspaint").appendTo("body");
+window.$app = $app;
 
 const $V = $(E("div")).addClass("vertical").appendTo($app);
 const $H = $(E("div")).addClass("horizontal").appendTo($V);
 
-const $canvas_area = $(E("div")).addClass("canvas-area").appendTo($H);
+const $canvas_area = $(E("div")).addClass("canvas-area inset-deep").appendTo($H);
+window.$canvas_area = $canvas_area;
 
-const $canvas = $(canvas).appendTo($canvas_area);
-$canvas.attr("touch-action", "none");
-let canvas_bounding_client_rect = canvas.getBoundingClientRect(); // cached for performance, updated later
-const getRect = ()=> ({left: 0, top: 0, width: canvas.width, height: canvas.height, right: canvas.width, bottom: canvas.height})
-const $canvas_handles = $Handles($canvas_area, getRect, {
+const $canvas = $(main_canvas).appendTo($canvas_area);
+window.$canvas = $canvas;
+$canvas.css("touch-action", "none");
+window.canvas_bounding_client_rect = main_canvas.getBoundingClientRect(); // cached for performance, updated later
+const canvas_handles = new Handles({
+	$handles_container: $canvas_area,
+	$object_container: $canvas_area,
+	get_rect: () => ({ x: 0, y: 0, width: main_canvas.width, height: main_canvas.height }),
+	set_rect: ({ width, height }) => resize_canvas_and_save_dimensions(width, height),
 	outset: 4,
-	get_offset_left: ()=> parseFloat($canvas_area.css("padding-left")) + 1,
-	get_offset_top: ()=> parseFloat($canvas_area.css("padding-top")) + 1,
+	get_handles_offset_left: () => parseFloat($canvas_area.css("padding-left")) + 1,
+	get_handles_offset_top: () => parseFloat($canvas_area.css("padding-top")) + 1,
+	get_ghost_offset_left: () => parseFloat($canvas_area.css("padding-left")) + 1,
+	get_ghost_offset_top: () => parseFloat($canvas_area.css("padding-top")) + 1,
 	size_only: true,
 });
-// hack: fix canvas handles causing document to scroll when selecting/deselecting
-// by overriding these methods
-$canvas_handles.hide = ()=> { $canvas_handles.css({opacity: 0, pointerEvents: "none"}); };
-$canvas_handles.show = ()=> { $canvas_handles.css({opacity: "", pointerEvents: ""}); };
+window.canvas_handles = canvas_handles;
 
-const $top = $(E("div")).addClass("component-area").prependTo($V);
-const $bottom = $(E("div")).addClass("component-area").appendTo($V);
-const $left = $(E("div")).addClass("component-area").prependTo($H);
-const $right = $(E("div")).addClass("component-area").appendTo($H);
+const $top = $(E("div")).addClass("component-area top").prependTo($V);
+window.$top = $top;
+const $bottom = $(E("div")).addClass("component-area bottom").appendTo($V);
+window.$bottom = $bottom;
+const $left = $(E("div")).addClass("component-area left").prependTo($H);
+window.$left = $left;
+const $right = $(E("div")).addClass("component-area right").appendTo($H);
+window.$right = $right;
+
+
 // there's also probably a CSS solution alternative to this
 if (get_direction() === "rtl") {
 	$left.appendTo($H);
 	$right.prependTo($H);
 }
 
-const $status_area = $(E("div")).addClass("status-area").appendTo($V);
-const $status_text = $(E("div")).addClass("status-text").appendTo($status_area);
-const $status_position = $(E("div")).addClass("status-coordinates").appendTo($status_area);
-const $status_size = $(E("div")).addClass("status-coordinates").appendTo($status_area);
+// #endregion
+// (arguably still App UI stuff below, but it becomes a fuzzy line later on)
 
+// #region Status Bar
+const $status_area = $(E("div")).addClass("status-area").appendTo($V);
+window.$status_area = $status_area;
+const $status_text = /** @type {JQuery<HTMLDivElement> & {default: ()=> void}} */($(E("div")).addClass("status-text status-field inset-shallow").appendTo($status_area));
+window.$status_text = $status_text;
+const $status_position = $(E("div")).addClass("status-coordinates status-field inset-shallow").appendTo($status_area);
+window.$status_position = $status_position;
+const $status_size = $(E("div")).addClass("status-coordinates status-field inset-shallow").appendTo($status_area);
+window.$status_size = $status_size;
+
+// #region News Indicator
+const news_seen_key = "jspaint latest news seen";
+const latest_news_datetime = $this_version_news.find("time").attr("datetime");
 const $news_indicator = $(`
-	<a class='news-indicator' href='#project-news'>
-		<img src='images/winter/present.png' width='24' height='22' alt=''/>
-		<span class='marquee' dir='ltr' style='--text-width: 52ch; --animation-duration: 5s;'>
+	<a class="news-indicator" href="#project-news">
+		<img src="images/winter/present.png" width="24" height="22" alt=""/>
+		<!--<img src="images/about/news.gif" width="40" height="16" alt=""/>-->
+		<!--<img src="images/new.gif" width="40" height="16" alt=""/>-->
+		<span class="marquee" dir="ltr" style="--text-width: 69ch; --animation-duration: 3s;">
 			<span>
-				<strong>New!</strong>&nbsp;Localization, Eye Gaze Mode, and Speech Recognition!
+				Discord server, Head Tracker, Quick Undo Button, Enlarge UI, and Dwell Clicker
 			</span>
 		</span>
+		<!--<span class="marquee" dir="ltr" style="--text-width: 44ch; --animation-duration: 3s;">
+			<span>
+				<b>Cool new things</b> — One thing! Another thing! Something else!
+			</span>
+		</span>
+		<span>
+			<b>Just One Thing</b>
+		</span>-->
 	</a>
 `);
-$news_indicator.on("click auxclick", (event)=> {
+$news_indicator.on("click auxclick", (event) => {
 	event.preventDefault();
 	show_news();
+	$news_indicator.remove();
+	try {
+		localStorage[news_seen_key] = latest_news_datetime;
+	} catch (_error) { /* ignore */ }
 });
-// @TODO: use localstorage to show until clicked, if available
-// and show for a longer period of time after the update, if available
-if (Date.now() < Date.parse("Jan 5 2021 23:42:42 GMT-0500")) {
+let news_seen;
+let local_storage_unavailable;
+try {
+	news_seen = localStorage[news_seen_key];
+} catch (_error) {
+	local_storage_unavailable = true;
+}
+const day = 24 * 60 * 60 * 1000;
+const news_period_if_can_dismiss = 15 * day;
+const news_period_if_cannot_dismiss = 5 * day;
+const news_period = local_storage_unavailable ? news_period_if_cannot_dismiss : news_period_if_can_dismiss;
+if (Date.now() < Date.parse(latest_news_datetime) + news_period && news_seen !== latest_news_datetime) {
 	$status_area.append($news_indicator);
 }
+if ($news_indicator.text().includes("Bubblegum")) {
+	let bubbles_raf_id = -1;
+	const bubbles = [];
+	const make_bubble = () => {
+		const $bubble = $(E("img")).attr({
+			src: "images/bubblegum/bubble.png",
+			width: 24,
+			height: 24,
+			alt: "",
+		}).css({
+			position: "absolute",
+			pointerEvents: "none",
+			top: 0,
+			left: 0,
+			zIndex: 10,
+		}).appendTo("body");
+		const rect = $news_indicator[0].getBoundingClientRect();
+		const x = rect.left + Math.random() * rect.width;
+		const y = rect.top + rect.height;
+		const scale = Math.random() * 0.5 + 0.5;
+		const bubble = { $bubble, x, y, scale, vx: Math.random() * 2 - 1, vy: -Math.random() * 2 };
+		bubbles.push(bubble);
+		if (bubbles_raf_id === -1) {
+			animate_bubbles();
+		}
+		setTimeout(() => {
+			$bubble.remove();
+			bubbles.splice(bubbles.indexOf(bubble), 1);
+			if (bubbles.length === 0) {
+				cancelAnimationFrame(bubbles_raf_id);
+				bubbles_raf_id = -1;
+			}
+		}, 10000);
+	};
+	let last_time = performance.now();
+	const animate_bubbles = () => {
+		bubbles_raf_id = requestAnimationFrame(animate_bubbles);
+		const now = performance.now();
+		const dt = now - last_time;
+		for (const bubble of bubbles) {
+			// not actually frame rate independent physics, I don't think
+			bubble.x += bubble.vx * dt / 16;
+			bubble.y += bubble.vy * dt / 16;
+			const wind_x = Math.sin(bubble.y / 100 + now / 3000) * 0.01;
+			const wind_y = Math.cos(bubble.x / 100 + now / 3000) * 0.01;
+			bubble.vx += wind_x;
+			bubble.vy += wind_y;
+			bubble.$bubble.css({
+				transform: `translate(${bubble.x}px, ${bubble.y}px) scale(${bubble.scale})`,
+			});
+		}
+		last_time = now;
+	};
+	$news_indicator.on("pointerenter", () => {
+		for (let i = 0; i < 10; i++) {
+			setTimeout(make_bubble, i * 100);
+		}
+	});
+	$news_indicator.on("pointerdown", () => {
+		for (let i = 0; i < 50; i++) {
+			setTimeout(make_bubble, i * 1);
+		}
+	});
+}
+// #endregion
 
 $status_text.default = () => {
 	$status_text.text(localize("For Help, click Help Topics on the Help Menu."));
 };
 $status_text.default();
 
-// menu bar
+// #endregion
+
+// #region Menu Bar
 let menu_bar_outside_frame = false;
-if(frameElement){
-	try{
-		if(parent.$MenuBar){
-			$MenuBar = parent.$MenuBar;
+if (frameElement) {
+	try {
+		if (parent.MenuBar) {
+			// @ts-ignore
+			MenuBar = parent.MenuBar;
 			menu_bar_outside_frame = true;
 		}
-	// eslint-disable-next-line no-empty
-	}catch(e){}
+	} catch (_error) { /* ignore */ }
 }
-const $menu_bar = $MenuBar(menus);
-if(menu_bar_outside_frame){
-	$menu_bar.insertBefore(frameElement);
-}else{
-	$menu_bar.prependTo($V);
+const menu_bar = MenuBar(menus);
+window.menu_bar = menu_bar;
+if (menu_bar_outside_frame) {
+	$(menu_bar.element).insertBefore(frameElement);
+} else {
+	$(menu_bar.element).prependTo($V);
 }
 
-$menu_bar.on("info", (_event, info) => {
-	$status_text.text(info);
+$(menu_bar.element).on("info", (event) => {
+	// @ts-ignore
+	$status_text.text(event.detail?.description ?? "");
 });
-$menu_bar.on("default-info", ()=> {
+$(menu_bar.element).on("default-info", () => {
 	$status_text.default();
 });
-// </menu bar>
+
+// Hidden in a menu, these GIFs are not as obtrusive even though they can't be dismissed
+const theme_updated_period = 20 * day;
+const theme_new_period = 40 * day;
+const theme_soon_period = 40 * day;
+if (Date.now() < Date.parse("2024-02-22") + theme_new_period) {
+	$("[role=menuitem][aria-label*='Modern Dark'] .menu-item-shortcut").append("<img src='images/new2.gif' alt='New!'/>");
+}
+if (Date.now() < Date.parse("2024-02-24") + theme_soon_period) {
+	// $("[role=menuitem][aria-label*='Bubblegum'] .menu-item-shortcut").append("<img src='images/soon-twist-anim.gif' alt='Coming Soon!' class='too-big-soon-gif'/>");
+	// $("[role=menuitem][aria-label*='Retro Futurist'] .menu-item-shortcut").append("<img src='images/soon.gif' alt='Coming Soon!'/>");
+	// $("[role=menuitem][aria-label*='Picnic'] .menu-item-shortcut").append("<img src='images/soon.gif' alt='Coming Soon!'/>");
+}
+if (Date.now() < Date.parse("2024-02-22") + theme_updated_period) {
+	$("[role=menuitem][aria-label*='Modern Light'] .menu-item-shortcut").append("<img src='images/updated.gif' alt='Updated!'/>");
+	$("[role=menuitem][aria-label*='Classic Dark'] .menu-item-shortcut").append("<img src='images/updated.gif' alt='Updated!'/>");
+	$("[role=menuitem][aria-label*='Occult'] .menu-item-shortcut").append("<img src='images/updated.gif' alt='Updated!'/>");
+}
+
+// Extras menu emoji icons
+// (OS-GUI.js doesn't support icons yet but I wanted to spruce it up a bit.)
+// Originally I defined the emoji as part of the label, which worked well for a while.
+// Now I'm rendering the emoji as pseudo elements.
+// - It allows for matching on the menu item text exactly, without including emoji in my tests,
+//   which will hopefully be replaced with custom icons in the future.
+// - It makes it easier to replace the emoji with custom icons in the future.
+// - It hides the emoji from `aria-label`, for screen reader users.
+// - It makes the menu data cleaner.
+// - It allows aligning the emoji nicely, even when some don't show as emoji, depending on the platform.
+
+/**
+ * @param {OSGUIMenuFragment[]} menu_items
+ * @param {HTMLElement} menu_element
+ * @yields {[OSGUIMenuItem, HTMLElement]}
+ * @returns {Generator<[OSGUIMenuItem, HTMLElement], void, void>}
+ */
+function* traverse_menu(menu_items, menu_element) {
+	// Traverse menu data and elements in tandem, yielding pairs of menu item specifications and elements.
+	// This approach handles identically named menu items in separate menus,
+	// as is the case with "File > Manage Storage" and "Edit > History", both present in the Extras menu,
+	// but also in the other menus for discoverability.
+	// However, it doesn't handle identically named menu items in the same menu,
+	// as it still matches up items within the menu using aria-label.
+
+	// Menu structure:
+	// - Menu popups are not descendants of the menu bar or other menu popups; they are always direct children of the body.
+	// - Menu items that open submenus have "aria-controls" pointing to the ID of the submenu.
+	// - (Menu popups also have "data-semantic-parent" pointing to the ID of the menu item that opens them.)
+	// - `submenu` is an array, but the top level (menu bar) is represented as an object, which is a bit awkward.
+	//   However, this function doesn't deal with the top level.
+
+	const menu_item_elements = /** @type {HTMLElement[]} */([...menu_element.querySelectorAll(".menu-item")]);
+	for (const menu_item of menu_items) {
+		if (typeof menu_item !== "object" || !("label" in menu_item)) {
+			continue;
+		}
+		const aria_label = AccessKeys.toText(menu_item.label);
+		const menu_item_element = menu_item_elements.filter((el) =>
+			el.getAttribute("aria-label") === aria_label
+		)[0];
+		if (!menu_item_element) {
+			console.warn("Couldn't find menu item", menu_item, "with aria-label", aria_label);
+			continue;
+		}
+		yield [menu_item, menu_item_element];
+		if (menu_item.submenu) {
+			yield* traverse_menu(menu_item.submenu, menu_document.getElementById(menu_item_element.getAttribute("aria-controls")));
+		}
+		// if (menu_item.radioItems) {
+		// 	yield* traverse_menu(menu_item.radioItems, menu_element);
+		// }
+	}
+}
+
+const menu_document = menu_bar.element.ownerDocument;
+const extras_menu_button = menu_document.querySelector(".extras-menu-button");
+const extras_menu_popup = menu_document.getElementById(extras_menu_button.getAttribute("aria-controls"));
+
+let emoji_css = `
+	.menu-item .menu-item-label::before {
+		display: inline-block;
+		width: 1.8em;
+		margin-right: 0.2em;
+		text-align: center;
+	}
+`;
+for (const [menu_item, menu_item_element] of traverse_menu(menus["E&xtras"], extras_menu_popup)) {
+	if (menu_item.emoji_icon) {
+		emoji_css += `
+			#${menu_item_element.id} .menu-item-label::before {
+				content: "${menu_item.emoji_icon}";
+			}
+		`;
+	}
+}
+$("<style>").text(emoji_css).appendTo(menu_document.head);
+
+// Electron menu integration
+if (window.is_electron_app) {
+	window.setMenus(menus);
+}
+
+// #endregion
 
 let $toolbox = $ToolBox(tools);
+window.$toolbox = $toolbox;
 // let $toolbox2 = $ToolBox(extra_tools, true);//.hide();
 // Note: a second $ToolBox doesn't work because they use the same tool options (which could be remedied)
 // If there's to be extra tools, they should probably get a window, with different UI
 // so it can display names of the tools, and maybe authors and previews (and not necessarily icons)
 
 let $colorbox = $ColorBox($("body").hasClass("vertical-color-box-mode"));
+window.$colorbox = $colorbox;
 
-$G.on("vertical-color-box-mode-toggled", ()=> {
+$G.on("vertical-color-box-mode-toggled", () => {
+	// Destroy and recreate the color box because it uses a constructor parameter
+	// for this state and this handles re-docking to the correct edge
 	$colorbox.destroy();
 	$colorbox = $ColorBox($("body").hasClass("vertical-color-box-mode"));
+	window.$colorbox = $colorbox;
 	prevent_selection($colorbox);
-});
-$G.on("eye-gaze-mode-toggled", ()=> {
-	$colorbox.destroy();
-	$colorbox = $ColorBox($("body").hasClass("vertical-color-box-mode"));
-	prevent_selection($colorbox);
-	
-	$toolbox.destroy();
-	$toolbox = $ToolBox(tools);
-	prevent_selection($toolbox);
-
-	// $toolbox2.destroy();
-	// $toolbox2 = $ToolBox(extra_tools, true);
-	// prevent_selection($toolbox2);
-});
-
-
-$canvas_area.on("user-resized", (_event, _x, _y, unclamped_width, unclamped_height) => {
-	resize_canvas_and_save_dimensions(unclamped_width, unclamped_height);
 });
 
 $G.on("resize", () => { // for browser zoom, and in-app zoom of the canvas
@@ -371,43 +811,118 @@ $canvas_area.on("resize", () => {
 // Listening for scroll here is mainly in case a case is forgotten, like scrollIntoView,
 // in which case it will flash sometimes but at least not end up with part of
 // the application scrolled off the screen with no scrollbar to get it back.
-$G.on("scroll focusin", (event) => {
+$G.on("scroll focusin", () => {
 	window.scrollTo(0, 0);
 });
 
-$("body").on("dragover dragenter", e => {
-	const dt = e.originalEvent.dataTransfer;
-	const has_files = Array.from(dt.types).includes("Files");
-	if(has_files){
-		e.preventDefault();
+// #region Drag and Drop
+
+// jQuery's multiple event handling is not that useful in the first place, but when adding type info... it's downright ugly.
+$("body").on("dragover dragenter", (/** @type {JQuery.DragOverEvent | JQuery.DragEnterEvent} */event) => {
+	const dt = event.originalEvent.dataTransfer;
+	const has_files = dt && Array.from(dt.types).includes("Files");
+	if (has_files) {
+		event.preventDefault();
 	}
-}).on("drop", e => {
-	if(e.isDefaultPrevented()){
+}).on("drop", async (event) => {
+	if (event.isDefaultPrevented()) {
 		return;
 	}
-	const dt = e.originalEvent.dataTransfer;
-	const has_files = Array.from(dt.types).includes("Files");
-	if(has_files){
-		e.preventDefault();
-		if(dt && dt.files && dt.files.length){
-			open_from_FileList(dt.files, "dropped");
+	const dt = event.originalEvent.dataTransfer;
+	const has_files = dt && Array.from(dt.types).includes("Files");
+	if (has_files) {
+		event.preventDefault();
+		// @TODO: sort files/items in priority of image, theme, palette
+		// and then try loading them in series, with async await to avoid race conditions?
+		// or maybe support opening multiple documents in tabs
+		// Note: don't use FS Access API in Electron app because:
+		// 1. it's faulty (permissions problems, 0 byte files maybe due to the perms problems)
+		// 2. we want to save the file.path, which the dt.files code path takes care of
+		if (window.FileSystemHandle && !window.is_electron_app) {
+			for (const item of dt.items) {
+				// kind will be "file" for file/directory entries.
+				if (item.kind === "file") {
+					let handle;
+					try {
+						// Experimental API, not supported on Firefox as of 2024-02-17
+						if ("getAsFileSystemHandle" in item) {
+							// @ts-ignore
+							handle = await item.getAsFileSystemHandle();
+						}
+					} catch (error) {
+						// I'm not sure when this happens.
+						// should this use "An invalid file handle was associated with %1." message?
+						show_error_message(localize("File not found."), error);
+						return;
+					}
+					if (!handle || handle.kind === "file") {
+						let file;
+						try {
+							// instanceof is for the type checker; it should be guaranteed since kind is "file"
+							if (handle && handle instanceof FileSystemFileHandle) {
+								file = await handle.getFile();
+							} else {
+								file = item.getAsFile();
+							}
+						} catch (error) {
+							// NotFoundError can happen when the file was moved or deleted,
+							// then dragged and dropped via the browser's downloads bar, or some other outdated file listing.
+							show_error_message(localize("File not found."), error);
+							return;
+						}
+						open_from_file(file, handle);
+						if (window._open_images_serially) {
+							// For testing a suite of files:
+							await new Promise((resolve) => setTimeout(resolve, 500));
+						} else {
+							// Normal behavior: only open one file.
+							return;
+						}
+					}
+					// else if (handle.kind === "directory") {}
+				}
+			}
+		} else if (dt.files && dt.files.length) {
+			if (window._open_images_serially) {
+				// For testing a suite of files, such as http://www.schaik.com/pngsuite/
+				let i = 0;
+				const iid = setInterval(() => {
+					console.log("opening", dt.files[i].name);
+					open_from_file(dt.files[i]);
+					i++;
+					if (i >= dt.files.length) {
+						clearInterval(iid);
+					}
+				}, 1500);
+			} else {
+				// Normal behavior: only open one file.
+				open_from_file(dt.files[0]);
+			}
 		}
 	}
 });
 
-$G.on("keydown", e => {
-	if(e.isDefaultPrevented()){
+// #endregion
+
+// #region Keyboard Shortcuts
+$G.on("keydown", (e) => {
+	// typecast to HTMLElement because e.target is incorrectly given as Window, due to $G wrapping window
+	const target = /** @type {HTMLElement} */ (/** @type {unknown} */ (e.target));
+
+	if (e.isDefaultPrevented()) {
 		return;
 	}
-	if (e.keyCode === 27) { // Esc
-		if (textbox && textbox.$editor.is(e.target)) {
+	if (e.key === "Escape") { // Note: Escape handled below too! (after input/textarea return condition)
+		if (textbox && textbox.$editor.is(target)) {
 			deselect();
 		}
 	}
 	if (
-		// Ctrl+Shift+Y
+		// Ctrl+Shift+Y for history window,
+		// chosen because it's related to the undo/redo shortcuts
+		// and it looks like a branching symbol.
 		(e.ctrlKey || e.metaKey) && e.shiftKey && !e.altKey &&
-		String.fromCharCode(e.keyCode).toUpperCase() === "Y"
+		e.key.toUpperCase() === "Y"
 	) {
 		show_document_history();
 		e.preventDefault();
@@ -418,76 +933,106 @@ $G.on("keydown", e => {
 	// maybe it should only handle the event if document.activeElement is the body or html element?
 	// (or $app could have a tabIndex and no focus style and be focused under various conditions,
 	// if that turned out to make more sense for some reason)
-	if(
+	if (
 		e.target instanceof HTMLInputElement ||
 		e.target instanceof HTMLTextAreaElement
-	){
+	) {
 		return;
 	}
 
 	// @TODO: preventDefault in all cases where the event is handled
 	// also, ideally check that modifiers *aren't* pressed
 	// probably best to use a library at this point!
-	
-	if(selection){
+
+	if (selection) {
 		const nudge_selection = (delta_x, delta_y) => {
 			selection.x += delta_x;
 			selection.y += delta_y;
 			selection.position();
 		};
-		switch(e.keyCode){
-			case 37: // Left
+		switch (e.key) {
+			case "ArrowLeft":
 				nudge_selection(-1, 0);
 				e.preventDefault();
 				break;
-			case 39: // Right
+			case "ArrowRight":
 				nudge_selection(+1, 0);
 				e.preventDefault();
 				break;
-			case 40: // Down
+			case "ArrowDown":
 				nudge_selection(0, +1);
 				e.preventDefault();
 				break;
-			case 38: // Up
+			case "ArrowUp":
 				nudge_selection(0, -1);
 				e.preventDefault();
 				break;
 		}
 	}
 
-	if(e.keyCode === 27){ //Escape
-		if(selection){
+	if (e.key === "Escape") { // Note: Escape handled above too!
+		if (selection) {
 			deselect();
-		}else{
+		} else {
 			cancel();
 		}
-		window.stopSimulatingGestures && window.stopSimulatingGestures();
-		window.trace_and_sketch_stop && window.trace_and_sketch_stop();
-	}else if(e.keyCode === 13){ //Enter
-		if(selection){
+		stopSimulatingGestures();
+		trace_and_sketch_stop();
+	} else if (e.key === "Enter") {
+		if (selection) {
 			deselect();
 		}
-	}else if(e.keyCode === 115){ //F4
+	} else if (e.key === "F1") {
+		show_help();
+		e.preventDefault();
+	} else if (e.key === "F4") {
 		redo();
-	}else if(e.keyCode === 46){ //Delete
-		delete_selection();
-	}else if(e.keyCode === 107 || e.keyCode === 109){ // Numpad Plus and Minus
-		const plus = e.keyCode === 107;
-		const minus = e.keyCode === 109;
-		const delta = plus - minus; // const delta = +plus++ -minus--; // Δ = ±±±±
+	} else if (e.key === "Delete" || e.key === "Backspace") {
+		// alt+backspace: undo
+		// shift+delete: cut
+		// delete/backspace: delete selection
+		if (e.key === "Delete" && e.shiftKey) {
+			edit_cut();
+		} else if (e.key === "Backspace" && e.altKey) {
+			undo();
+		} else {
+			delete_selection();
+		}
+		e.preventDefault();
+	} else if (e.key === "Insert") {
+		// ctrl+insert: copy
+		// shift+insert: paste
+		if (e.ctrlKey) {
+			edit_copy();
+			e.preventDefault();
+		} else if (e.shiftKey) {
+			edit_paste();
+			e.preventDefault();
+		}
+	} else if (
+		e.code === "NumpadAdd" ||
+		e.code === "NumpadSubtract" ||
+		// normal + and - keys
+		e.key === "+" ||
+		e.key === "-" ||
+		e.key === "="
+	) {
+		const plus = e.code === "NumpadAdd" || e.key === "+" || e.key === "=";
+		const minus = e.code === "NumpadSubtract" || e.key === "-";
+		const delta = Number(plus) - Number(minus); // const delta = +plus++ -minus--; // Δ = ±±±±
 
-		if(selection){
+		if (selection) {
 			selection.scale(2 ** delta);
-		}else{
-			if(selected_tool.id === TOOL_BRUSH){
+		} else {
+			if (selected_tool.id === TOOL_BRUSH) {
 				brush_size = Math.max(1, Math.min(brush_size + delta, 500));
-			}else if(selected_tool.id === TOOL_ERASER){
+			} else if (selected_tool.id === TOOL_ERASER) {
 				eraser_size = Math.max(1, Math.min(eraser_size + delta, 500));
-			}else if(selected_tool.id === TOOL_AIRBRUSH){
+			} else if (selected_tool.id === TOOL_AIRBRUSH) {
 				airbrush_size = Math.max(1, Math.min(airbrush_size + delta, 500));
-			}else if(selected_tool.id === TOOL_PENCIL){
+			} else if (selected_tool.id === TOOL_PENCIL) {
 				pencil_size = Math.max(1, Math.min(pencil_size + delta, 50));
-			}else if(
+			} else if (
 				selected_tool.id === TOOL_LINE ||
 				selected_tool.id === TOOL_CURVE ||
 				selected_tool.id === TOOL_RECTANGLE ||
@@ -499,8 +1044,8 @@ $G.on("keydown", e => {
 			}
 
 			$G.trigger("option-changed");
-			if(button !== undefined && pointer){ // pointer may only be needed for tests
-				selected_tools.forEach((selected_tool)=> {
+			if (button !== undefined && pointer) { // pointer may only be needed for tests
+				selected_tools.forEach((selected_tool) => {
 					tool_go(selected_tool);
 				});
 			}
@@ -508,10 +1053,9 @@ $G.on("keydown", e => {
 		}
 		e.preventDefault();
 		return;
-	}else if(e.ctrlKey || e.metaKey){
-		const key = String.fromCharCode(e.keyCode).toUpperCase();
-		if(textbox){
-			switch(key){
+	} else if (e.ctrlKey || e.metaKey) {
+		if (textbox) {
+			switch (e.key.toUpperCase()) {
 				case "A":
 				case "Z":
 				case "Y":
@@ -522,89 +1066,193 @@ $G.on("keydown", e => {
 					return;
 			}
 		}
-		switch(e.keyCode){
-			case 188: // , <
-			case 219: // [ {
-				rotate(-TAU/4);
-				$canvas_area.trigger("resize");
-			break;
-			case 190: // . >
-			case 221: // ] }
-				rotate(+TAU/4);
-				$canvas_area.trigger("resize");
-			break;
+		// Ctrl+PageDown: zoom to 400%
+		// Ctrl+PageUp: zoom to 100%
+		// In Chrome and Firefox, these switch to the next/previous tab,
+		// but it's allowed to be overridden in fullscreen in Chrome.
+		if (e.key === "PageDown") {
+			set_magnification(4);
+			e.preventDefault();
+			return;
+		} else if (e.key === "PageUp") {
+			set_magnification(1);
+			e.preventDefault();
+			return;
 		}
-		switch(key){
+		switch (e.key.toUpperCase()) {
+			case ",": // "<" without Shift
+			case "<":
+			case "[":
+			case "{":
+				rotate(-TAU / 4);
+				break;
+			case ".": // ">" without Shift
+			case ">":
+			case "]":
+			case "}":
+				rotate(+TAU / 4);
+				break;
 			case "Z":
-				e.shiftKey ? redo() : undo();
-			break;
+				if (e.shiftKey) {
+					redo();
+				} else {
+					undo();
+				}
+				break;
 			case "Y":
 				// Ctrl+Shift+Y handled above
 				redo();
-			break;
+				break;
 			case "G":
-				e.shiftKey ? render_history_as_gif() : toggle_grid();
-			break;
+				if (e.shiftKey) {
+					render_history_as_gif();
+				} else {
+					toggle_grid();
+				}
+				break;
 			case "F":
-				view_bitmap();
-			break;
+				// @ts-ignore (repeat doesn't exist on jQuery.Event, I guess, but this is fine)
+				if (!e.repeat && !e.originalEvent?.repeat) {
+					view_bitmap();
+				}
+				break;
 			case "O":
 				file_open();
-			break;
-			case "N":
-				e.shiftKey ? clear() : file_new();
-			break;
+				break;
 			case "S":
-				e.shiftKey ? file_save_as() : file_save();
-			break;
+				if (e.shiftKey) {
+					file_save_as();
+				} else {
+					file_save();
+				}
+				break;
 			case "A":
 				select_all();
-			break;
+				break;
 			case "I":
 				image_invert_colors();
-			break;
+				break;
 			case "E":
 				image_attributes();
-			break;
+				break;
+
+			// These shortcuts are mostly reserved by browsers,
+			// but they are allowed in Electron.
+			// The shortcuts are hidden in the menus (or changed) when not in Electron,
+			// to prevent accidental closing/refreshing.
+			// I'm supporting Alt+<shortcut> here (implicitly) as a workaround (and showing this in the menus in some cases).
+			// Also, note that Chrome allows some shortcuts to be overridden in fullscreen (but showing/hiding the shortcuts would be confusing).
+			case "N":
+				if (e.shiftKey) {
+					clear();
+				} else {
+					file_new();
+				}
+				break;
+			case "T":
+				$toolbox.toggle();
+				break;
+			case "L": // allowed to override in Firefox
+				$colorbox.toggle();
+				break;
+			case "R":
+				image_flip_and_rotate();
+				break;
+			case "W":
+				image_stretch_and_skew();
+				break;
+
 			default:
 				return; // don't preventDefault
 		}
 		e.preventDefault();
+		// put nothing below! note return above
 	}
 });
-$G.on("cut copy paste", e => {
-	if(e.isDefaultPrevented()){
+// #endregion
+
+// #region Alt+Mousewheel Zooming (and also some dev helper that I haven't used in years)
+let alt_zooming = false;
+addEventListener("keyup", (e) => {
+	if (e.key === "Alt" && alt_zooming) {
+		e.preventDefault(); // prevent menu bar from activating in Firefox from zooming
+	}
+	if (!e.altKey) {
+		alt_zooming = false;
+	}
+});
+// $G.on("wheel", (e) => {
+addEventListener("wheel", (e) => {
+	if (e.altKey) {
+		e.preventDefault();
+		let new_magnification = magnification;
+		const factor = 1 + Math.min(0.5, Math.abs(e.deltaY) / 100);
+		if (e.deltaY < 0) {
+			new_magnification *= factor;
+		} else {
+			new_magnification /= factor;
+		}
+		new_magnification = Math.max(0.5, Math.min(new_magnification, 80));
+		set_magnification(new_magnification, to_canvas_coords(e));
+		alt_zooming = true;
 		return;
 	}
-	if(
+	if (e.ctrlKey || e.metaKey) {
+		return;
+	}
+	// for reference screenshot mode (development helper):
+	if (location.hash.match(/compare-reference/i)) { // including compare-reference-tool-windows
+		// const delta_opacity = Math.sign(e.originalEvent.deltaY) * -0.1; // since attr() is not supported other than for content, this increment must match CSS
+		const delta_opacity = Math.sign(e.deltaY) * -0.2; // since attr() is not supported other than for content, this increment must match CSS
+		let old_opacity = parseFloat($("body").attr("data-reference-opacity"));
+		if (!isFinite(old_opacity)) {
+			old_opacity = 0.5;
+		}
+		const new_opacity = Math.max(0, Math.min(1, old_opacity + delta_opacity));
+		$("body").attr("data-reference-opacity", new_opacity);
+		// prevent scrolling, keeping the screenshot lined up
+		// e.preventDefault(); // doesn't work
+		// $canvas_area.scrollTop(0); // doesn't work with smooth scrolling
+		// $canvas_area.scrollLeft(0);
+	}
+}, { passive: false });
+// #endregion
+
+// #region Clipboard Handling
+$G.on("cut copy paste", (e) => {
+	if (e.isDefaultPrevented()) {
+		return;
+	}
+	if (
 		document.activeElement instanceof HTMLInputElement ||
 		document.activeElement instanceof HTMLTextAreaElement ||
 		!window.getSelection().isCollapsed
-	){
+	) {
 		// Don't prevent cutting/copying/pasting within inputs or textareas, or if there's a selection
 		return;
 	}
 
 	e.preventDefault();
+	// @ts-ignore
 	const cd = e.originalEvent.clipboardData || window.clipboardData;
-	if(!cd){ return; }
+	if (!cd) { return; }
 
-	if(e.type === "copy" || e.type === "cut"){
-		if(selection && selection.canvas){
+	if (e.type === "copy" || e.type === "cut") {
+		if (selection && selection.canvas) {
 			const do_sync_clipboard_copy_or_cut = () => {
 				// works only for pasting within a jspaint instance
 				const data_url = selection.canvas.toDataURL();
 				cd.setData("text/x-data-uri; type=image/png", data_url);
 				cd.setData("text/uri-list", data_url);
 				cd.setData("URL", data_url);
-				if(e.type === "cut"){
+				if (e.type === "cut") {
 					delete_selection({
 						name: localize("Cut"),
 						icon: get_help_folder_icon("p_cut.png"),
 					});
 				}
 			};
-			if (!navigator.clipboard || !navigator.clipboard.write) {
+			if (!navigator.clipboard || !navigator.clipboard.write || is_discord_embed) {
 				return do_sync_clipboard_copy_or_cut();
 			}
 			try {
@@ -613,163 +1261,86 @@ $G.on("cut copy paste", e => {
 				} else {
 					edit_copy();
 				}
-			} catch(e) {
+			} catch (_error) {
 				do_sync_clipboard_copy_or_cut();
 			}
 		}
-	}else if(e.type === "paste"){
+	} else if (e.type === "paste") {
 		for (const item of cd.items) {
-			if(item.type.match(/^text\/(?:x-data-uri|uri-list|plain)|URL$/)){
-				item.getAsString(text => {
-					const uris = get_URIs(text);
+			if (item.type.match(/^text\/(?:x-data-uri|uri-list|plain)|URL$/)) {
+				item.getAsString((text) => {
+					const uris = get_uris(text);
 					if (uris.length > 0) {
-						load_image_from_URI(uris[0], (error, img) => {
-							if(error){ return show_resource_load_error_message(error); }
-							paste(img);
+						load_image_from_uri(uris[0]).then((info) => {
+							paste(info.image || make_canvas(info.image_data));
+						}, (error) => {
+							show_resource_load_error_message(error);
 						});
 					} else {
 						show_error_message("The information on the Clipboard can't be inserted into Paint.");
 					}
 				});
 				break;
-			}else if(item.type.match(/^image\//)){
+			} else if (item.type.match(/^image\//)) {
 				paste_image_from_file(item.getAsFile());
 				break;
 			}
 		}
 	}
 });
+// #endregion
+
+// #region Initialization
+// This sort of thing should really be at the END of the file.
 
 reset_file();
-reset_colors();
+reset_selected_colors();
 reset_canvas_and_history(); // (with newly reset colors)
 set_magnification(default_magnification);
 
 // this is synchronous for now, but @TODO: handle possibility of loading a document before callback
 // when switching to asynchronous storage, e.g. with localforage
-storage.get({
+localStore.get({
 	width: default_canvas_width,
 	height: default_canvas_height,
 }, (err, stored_values) => {
-	if(err){return;}
-	my_canvas_width = stored_values.width;
-	my_canvas_height = stored_values.height;
-	
+	if (err) { return; }
+	my_canvas_width = Number(stored_values.width);
+	my_canvas_height = Number(stored_values.height);
+
 	make_or_update_undoable({
-		match: (history_node)=> history_node.name === localize("New"),
+		match: (history_node) => history_node.name === localize("New"),
 		name: "Resize Canvas For New Document",
 		icon: get_help_folder_icon("p_stretch_both.png"),
-	}, ()=> {
-		canvas.width = Math.max(1, my_canvas_width);
-		canvas.height = Math.max(1, my_canvas_height);
-		ctx.disable_image_smoothing();
-		if(!transparency){
-			ctx.fillStyle = colors.background;
-			ctx.fillRect(0, 0, canvas.width, canvas.height);
+	}, () => {
+		main_canvas.width = Math.max(1, my_canvas_width);
+		main_canvas.height = Math.max(1, my_canvas_height);
+		main_ctx.disable_image_smoothing();
+		if (!transparency) {
+			main_ctx.fillStyle = selected_colors.background;
+			main_ctx.fillRect(0, 0, main_canvas.width, main_canvas.height);
 		}
 		$canvas_area.trigger("resize");
 	});
 });
 
-if(window.document_file_path_to_open){
-	open_from_file_path(document_file_path_to_open, err => {
-		if(err){
-			return show_error_message(`Failed to open file ${document_file_path_to_open}`, err);
+if (window.initial_system_file_handle) {
+	systemHooks.readBlobFromHandle(window.initial_system_file_handle).then((file) => {
+		if (file) {
+			open_from_file(file, window.initial_system_file_handle);
 		}
+	}, (error) => {
+		// this handler is not always called, sometimes error message is shown from readBlobFromHandle
+		show_error_message(`Failed to open file ${window.initial_system_file_handle}`, error);
 	});
 }
+// #endregion
 
-const lerp = (a, b, b_ness)=> a + (b - a) * b_ness;
+// #region Palette Updating From Theme
 
-const color_ramp = (num_colors, start_hsla, end_hsla)=>
-	Array(num_colors).fill().map((_undefined, index, array)=>
-		`hsla(${
-			lerp(start_hsla[0], end_hsla[0], index/array.length)
-		}deg, ${
-			lerp(start_hsla[1], end_hsla[1], index/array.length)
-		}%, ${
-			lerp(start_hsla[2], end_hsla[2], index/array.length)
-		}%, ${
-			lerp(start_hsla[3], end_hsla[3], index/array.length)
-		}%)`
-	);
-
-const update_palette_from_theme = ()=> {
+const update_palette_from_theme = () => {
 	if (get_theme() === "winter.css") {
-		const make_stripe_patterns = (reverse)=> [
-			make_stripe_pattern(reverse, [
-				"hsl(166, 93%, 38%)",
-				"white",
-			]),
-			make_stripe_pattern(reverse, [
-				"white",
-				"hsl(355, 78%, 46%)",
-			]),
-			make_stripe_pattern(reverse, [
-				"hsl(355, 78%, 46%)",
-				"white",
-				"white",
-				"hsl(355, 78%, 46%)",
-				"hsl(355, 78%, 46%)",
-				"hsl(355, 78%, 46%)",
-				"white",
-				"white",
-				"hsl(355, 78%, 46%)",
-				"white",
-			], 2),
-			make_stripe_pattern(reverse, [
-				"hsl(166, 93%, 38%)",
-				"white",
-				"white",
-				"hsl(166, 93%, 38%)",
-				"hsl(166, 93%, 38%)",
-				"hsl(166, 93%, 38%)",
-				"white",
-				"white",
-				"hsl(166, 93%, 38%)",
-				"white",
-			], 2),
-			make_stripe_pattern(reverse, [
-				"hsl(166, 93%, 38%)",
-				"white",
-				"hsl(355, 78%, 46%)",
-				"white",
-			], 2),
-		];
-		palette = [
-			"black",
-			// green
-			"hsl(91, 55%, 81%)",
-			"hsl(142, 57%, 64%)",
-			"hsl(166, 93%, 38%)",
-			"#04ce1f", // elf green
-			"hsl(159, 93%, 16%)",
-			// red
-			"hsl(2, 77%, 27%)",
-			"hsl(350, 100%, 50%)",
-			"hsl(356, 97%, 64%)",
-			// brown
-			"#ad4632",
-			"#5b3b1d",
-			// stripes
-			...make_stripe_patterns(false),
-			// white to blue
-			...color_ramp(
-				6,
-				[200, 100, 100, 100],
-				[200, 100, 10, 100],
-			),
-			// pink
-			"#fcbaf8",
-			// silver
-			"hsl(0, 0%, 90%)",
-			"hsl(22, 5%, 71%)",
-			// gold
-			"hsl(48, 82%, 54%)",
-			"hsl(49, 82%, 72%)",
-			// stripes
-			...make_stripe_patterns(true),
-		];
+		palette = get_winter_palette();
 		$colorbox.rebuild_palette();
 	} else {
 		palette = default_palette;
@@ -778,78 +1349,79 @@ const update_palette_from_theme = ()=> {
 };
 
 $G.on("theme-load", update_palette_from_theme);
+// #region Initialization (continued)
 update_palette_from_theme();
+// #endregion
 
-function to_canvas_coords({clientX, clientY}) {
-	const rect = canvas_bounding_client_rect;
-	const cx = clientX - rect.left;
-	const cy = clientY - rect.top;
-	return {
-		x: ~~(cx / rect.width * canvas.width),
-		y: ~~(cy / rect.height * canvas.height),
-	};
-}
+// #endregion
 
 function update_fill_and_stroke_colors_and_lineWidth(selected_tool) {
-	ctx.lineWidth = stroke_size;
+	main_ctx.lineWidth = stroke_size;
 
-	const reverse_because_fill_only = selected_tool.$options && selected_tool.$options.fill && !selected_tool.$options.stroke;
-	ctx.fillStyle = fill_color =
-	ctx.strokeStyle = stroke_color =
-		colors[
-			(ctrl && colors.ternary && pointer_active) ? "ternary" :
-			((reverse ^ reverse_because_fill_only) ? "background" : "foreground")
-		];
-		
-	fill_color_k =
-	stroke_color_k =
-		ctrl ? "ternary" : ((reverse ^ reverse_because_fill_only) ? "background" : "foreground");
-		
-	if(selected_tool.shape || selected_tool.shape_colors){
-		if(!selected_tool.stroke_only){
-			if((reverse ^ reverse_because_fill_only)){
+	const reverse_because_fill_only = !!(selected_tool.$options && selected_tool.$options.fill && !selected_tool.$options.stroke);
+	/** @type {ColorSelectionSlot} */
+	const color_k =
+		(ctrl && selected_colors.ternary && pointer_active) ? "ternary" :
+			((reverse !== reverse_because_fill_only) ? "background" : "foreground");
+	main_ctx.fillStyle = fill_color =
+		main_ctx.strokeStyle = stroke_color =
+		selected_colors[color_k];
+
+	/** @type {ColorSelectionSlot} */
+	let fill_color_k =
+		ctrl ? "ternary" : ((reverse !== reverse_because_fill_only) ? "background" : "foreground");
+	/** @type {ColorSelectionSlot} */
+	let stroke_color_k = fill_color_k;
+
+	if (selected_tool.shape || selected_tool.shape_colors) {
+		if (!selected_tool.stroke_only) {
+			if ((reverse !== reverse_because_fill_only)) {
 				fill_color_k = "foreground";
 				stroke_color_k = "background";
-			}else{
+			} else {
 				fill_color_k = "background";
 				stroke_color_k = "foreground";
 			}
 		}
-		ctx.fillStyle = fill_color = colors[fill_color_k];
-		ctx.strokeStyle = stroke_color = colors[stroke_color_k];
+		main_ctx.fillStyle = fill_color = selected_colors[fill_color_k];
+		main_ctx.strokeStyle = stroke_color = selected_colors[stroke_color_k];
 	}
+	pick_color_slot = fill_color_k;
 }
 
-function tool_go(selected_tool, event_name){
+// #region Primary Canvas Interaction
+function tool_go(selected_tool, event_name) {
 	update_fill_and_stroke_colors_and_lineWidth(selected_tool);
 
-	if(selected_tool[event_name]){
-		selected_tool[event_name](ctx, pointer.x, pointer.y);
+	if (selected_tool[event_name]) {
+		selected_tool[event_name](main_ctx, pointer.x, pointer.y);
 	}
-	if(selected_tool.paint){
-		selected_tool.paint(ctx, pointer.x, pointer.y);
+	if (selected_tool.paint) {
+		selected_tool.paint(main_ctx, pointer.x, pointer.y);
 	}
 }
-function canvas_pointer_move(e){
+function canvas_pointer_move(e) {
 	ctrl = e.ctrlKey;
 	shift = e.shiftKey;
 	pointer = to_canvas_coords(e);
-	
-	// Quick Undo
+
+	// Quick Undo (for mouse/pen)
 	// (Note: pointermove also occurs when the set of buttons pressed changes,
 	// except when another event would fire like pointerdown)
-	if(pointers.length && e.button != -1){
+	if (pointers.length && e.button != -1) {
 		// compare buttons other than middle mouse button by using bitwise OR to make that bit of the number the same
 		const MMB = 4;
-		if(e.pointerType != pointer_type || (e.buttons | MMB) != (pointer_buttons | MMB)){
+		if (e.pointerType != pointer_type || (e.buttons | MMB) != (pointer_buttons | MMB)) {
 			cancel();
 			pointer_active = false; // NOTE: pointer_active used in cancel()
 			return;
 		}
 	}
 
-	if(e.shiftKey){
-		if(
+	if (e.shiftKey) {
+		// TODO: snap to 45 degrees for Pencil and Polygon tools
+		// TODO: manipulating the pointer object directly is a bit of a hack
+		if (
 			selected_tool.id === TOOL_LINE ||
 			selected_tool.id === TOOL_CURVE
 		) {
@@ -863,515 +1435,66 @@ function canvas_pointer_move(e){
 			const angle = Math.round(angle_0_to_8) * eighth_turn;
 			pointer.x = Math.round(pointer_start.x + Math.cos(angle) * dist);
 			pointer.y = Math.round(pointer_start.y + Math.sin(angle) * dist);
-		}else if(selected_tool.shape){
+		} else if (selected_tool.shape) {
 			// snap to four diagonals
 			const w = Math.abs(pointer.x - pointer_start.x);
 			const h = Math.abs(pointer.y - pointer_start.y);
-			if(w < h){
-				if(pointer.y > pointer_start.y){
+			if (w < h) {
+				if (pointer.y > pointer_start.y) {
 					pointer.y = pointer_start.y + w;
-				}else{
+				} else {
 					pointer.y = pointer_start.y - w;
 				}
-			}else{
-				if(pointer.x > pointer_start.x){
+			} else {
+				if (pointer.x > pointer_start.x) {
 					pointer.x = pointer_start.x + h;
-				}else{
+				} else {
 					pointer.x = pointer_start.x - h;
 				}
 			}
 		}
 	}
-	selected_tools.forEach((selected_tool)=> {
+	selected_tools.forEach((selected_tool) => {
 		tool_go(selected_tool);
 	});
 	pointer_previous = pointer;
 }
-$canvas.on("pointermove", e => {
+$canvas.on("pointermove", (e) => {
 	pointer = to_canvas_coords(e);
 	$status_position.text(`${pointer.x},${pointer.y}`);
 });
-$canvas.on("pointerenter", ()=> {
+$canvas.on("pointerenter", (e) => {
 	pointer_over_canvas = true;
 
-	update_helper_layer();
+	update_helper_layer(e);
 
 	if (!update_helper_layer_on_pointermove_active) {
 		$G.on("pointermove", update_helper_layer);
 		update_helper_layer_on_pointermove_active = true;
 	}
 });
-$canvas.on("pointerleave", ()=> {
+$canvas.on("pointerleave", (e) => {
 	pointer_over_canvas = false;
 
 	$status_position.text("");
 
-	update_helper_layer();
-	
+	update_helper_layer(e);
+
 	if (!pointer_active && update_helper_layer_on_pointermove_active) {
 		$G.off("pointermove", update_helper_layer);
 		update_helper_layer_on_pointermove_active = false;
 	}
 });
+// #endregion
 
-let clean_up_eye_gaze_mode = ()=> {};
-$G.on("eye-gaze-mode-toggled", ()=> {
-	if ($("body").hasClass("eye-gaze-mode")) {
-		init_eye_gaze_mode();
-	} else {
-		clean_up_eye_gaze_mode();
-	}
-});
-if ($("body").hasClass("eye-gaze-mode")) {
-	init_eye_gaze_mode();
-}
-
-function init_eye_gaze_mode() {
-	const circle_radius_max = 50; // dwell indicator size in pixels
-	const hover_timespan = 500; // how long between the dwell indicator appearing and triggering a click
-	const averaging_window_timespan = 500;
-	const inactive_at_startup_timespan = 1500; // (should be at least averaging_window_timespan, but more importantly enough to make it not awkward when enabling eye gaze mode)
-	const inactive_after_release_timespan = 1000; // after click or drag release (from dwell or otherwise)
-	const inactive_after_hovered_timespan = 1000; // after dwell click indicator appears; does not control the time to finish that dwell click, only to click on something else after this is canceled (but it doesn't control that directly)
-	const inactive_after_invalid_timespan = 1000; // after a dwell click is canceled due to an element popping up in front, or existing in front at the center of the other element
-	const inactive_after_focused_timespan = 1000; // after page becomes focused after being unfocused
-	let recent_points = [];
-	let inactive_until_time = Date.now();
-	let paused = false;
-	let $pause_button;
-	let hover_candidate;
-	let gaze_dragging = null;
-
-	const deactivate_for_at_least = (timespan)=> {
-		inactive_until_time = Math.max(inactive_until_time, Date.now() + timespan);
-	};
-	deactivate_for_at_least(inactive_at_startup_timespan);
-
-	const $halo = $("<div class='hover-halo'>").appendTo("body").hide();
-	const $dwell_indicator = $("<div class='dwell-indicator'>").css({
-		width: circle_radius_max,
-		height: circle_radius_max,
-	}).appendTo("body").hide();
-
-	const on_pointer_move = (e)=> {
-		recent_points.push({x: e.clientX, y: e.clientY, time: Date.now()});
-	};
-	const on_pointer_up_or_cancel = (e)=> {
-		deactivate_for_at_least(inactive_after_release_timespan);
-		gaze_dragging = null;
-	};
-
-	let page_focused = document.visibilityState === "visible"; // guess/assumption
-	let mouse_inside_page = true; // assumption
-	const on_focus = ()=> {
-		page_focused = true;
-		deactivate_for_at_least(inactive_after_focused_timespan);
-	};
-	const on_blur = ()=> {
-		page_focused = false;
-	};
-	const on_mouse_leave_page = ()=> {
-		mouse_inside_page = false;
-	};
-	const on_mouse_enter_page = ()=> {
-		mouse_inside_page = true;
-	};
-
-	$G.on("pointermove", on_pointer_move);
-	$G.on("pointerup pointercancel", on_pointer_up_or_cancel);
-	$G.on("focus", on_focus);
-	$G.on("blur", on_blur);
-	$(document).on("mouseleave", on_mouse_leave_page);
-	$(document).on("mouseenter", on_mouse_enter_page);
-
-	const get_hover_candidate = (clientX, clientY)=> {
-
-		if (!page_focused || !mouse_inside_page) return null;
-
-		let target = document.elementFromPoint(clientX, clientY);
-		if (!target) {
-			return null;
-		}
-		
-		let hover_candidate = {
-			x: clientX,
-			y: clientY,
-			time: Date.now(),
-		};
-		
-		// top level menus are just immediately switched between for now
-		// prevent awkward hover clicks on top level menu buttons while menus are open
-		if(
-			(target.closest(".menu-button") || target.matches(".menu-container")) &&
-			$(".menu-button.active").length
-		) {
-			return null;
-		}
-
-		const target_selector = `
-			button:not([disabled]),
-			input,
-			textarea,
-			label,
-			a,
-			.current-colors,
-			.color-button,
-			.edit-colors-window .swatch,
-			.edit-colors-window .rainbow-canvas,
-			.edit-colors-window .luminosity-canvas,
-			.tool:not(.selected),
-			.chooser-option,
-			.menu-button:not(.active),
-			.menu-item,
-			.main-canvas,
-			.selection canvas,
-			.handle,
-			.window:not(.maximized) .window-titlebar,
-			.history-entry,
-			.canvas-area
-		`;
-		// .canvas-area is handled specially below
-		// (it's not itself a desired target)
-
-		target = target.closest(target_selector);
-
-		if (!target) {
-			return null;
-		}
-
-		// if (target.matches(".help-window li")) {
-		// 	target = target.querySelector(".item");
-		// }
-
-		if (target === $canvas_area[0]) {
-			// Nudge hovers near the edges of the canvas onto the canvas
-			const margin = 50;
-			if (
-				hover_candidate.x > canvas_bounding_client_rect.left - margin &&
-				hover_candidate.y > canvas_bounding_client_rect.top - margin &&
-				hover_candidate.x < canvas_bounding_client_rect.right + margin &&
-				hover_candidate.y < canvas_bounding_client_rect.bottom + margin
-			) {
-				target = canvas;
-				hover_candidate.x = Math.min(
-					canvas_bounding_client_rect.right - 1,
-					Math.max(
-						canvas_bounding_client_rect.left,
-						hover_candidate.x,
-					),
-				);
-				hover_candidate.y = Math.min(
-					canvas_bounding_client_rect.bottom - 1,
-					Math.max(
-						canvas_bounding_client_rect.top,
-						hover_candidate.y,
-					),
-				);
-			} else {
-				return null;
-			}
-		}else if(!target.matches(".main-canvas, .selection canvas, .window-titlebar, .rainbow-canvas, .luminosity-canvas")){
-			// Nudge hover previews to the center of buttons and things
-			const rect = target.getBoundingClientRect();
-			hover_candidate.x = rect.left + rect.width / 2;
-			hover_candidate.y = rect.top + rect.height / 2;
-		}
-		hover_candidate.target = target;
-		return hover_candidate;
-	};
-
-	const get_event_options = ({x, y, target=document.body})=> {
-		const rect = target.getBoundingClientRect();
-		return {
-			pageX: x,
-			pageY: y,
-			clientX: x,
-			clientY: y,
-			// handling CSS transform scaling but not rotation
-			offsetX: (x - rect.left) * target.offsetWidth / rect.width,
-			offsetY: (y - rect.top) * target.offsetHeight / rect.height,
-			pointerId: 1234567890,
-			pointerType: "mouse",
-			isPrimary: true,
-		};
-	};
-
-	const update = ()=> {
-		const time = Date.now();
-		recent_points = recent_points.filter((point_record)=> time < point_record.time + averaging_window_timespan);
-		if (recent_points.length) {
-			const latest_point = recent_points[recent_points.length - 1];
-			recent_points.push({x: latest_point.x, y: latest_point.y, time});
-			const average_point = average_points(recent_points);
-			// debug
-			// const canvas_point = to_canvas_coords({clientX: average_point.x, clientY: average_point.y});
-			// ctx.fillStyle = "red";
-			// ctx.fillRect(canvas_point.x, canvas_point.y, 10, 10);
-			const recent_movement_amount = Math.hypot(latest_point.x - average_point.x, latest_point.y - average_point.y);
-
-			// Invalidate in case an element pops up in front of the element you're hovering over, e.g. a submenu
-			if (hover_candidate && !gaze_dragging) {
-				const apparent_hover_candidate = get_hover_candidate(hover_candidate.x, hover_candidate.y);
-				if (apparent_hover_candidate) {
-					if (
-						apparent_hover_candidate.target !== hover_candidate.target &&
-						apparent_hover_candidate.target.closest("label") !== hover_candidate.target
-					) {
-						hover_candidate = null;
-						deactivate_for_at_least(inactive_after_invalid_timespan);
-					}
-				} else {
-					hover_candidate = null;
-					deactivate_for_at_least(inactive_after_invalid_timespan);
-				}
-			}
-			
-			let circle_position = latest_point;
-			let circle_opacity = 0;
-			let circle_radius = 0;
-			if (hover_candidate) {
-				circle_position = hover_candidate;
-				circle_opacity = 0.4;
-				circle_radius =
-					(hover_candidate.time - time + hover_timespan) / hover_timespan
-					* circle_radius_max;
-				if (time > hover_candidate.time + hover_timespan) {
-					if (pointer_active || gaze_dragging) {
-						$(hover_candidate.target).trigger($.Event("pointerup", Object.assign(get_event_options(hover_candidate), {
-							button: 0,
-							buttons: 0,
-						})));
-					} else {
-						pointers = []; // prevent multi-touch panning
-						$(hover_candidate.target).trigger($.Event("pointerdown", Object.assign(get_event_options(hover_candidate), {
-							button: 0,
-							buttons: 1,
-						})));
-						const is_drag =
-							hover_candidate.target.matches(".window-titlebar, .window-titlebar *:not(button)") ||
-							hover_candidate.target.matches(".selection, .selection *, .handle") ||
-							(
-								hover_candidate.target === canvas &&
-								selected_tool.id !== TOOL_PICK_COLOR &&
-								selected_tool.id !== TOOL_FILL &&
-								selected_tool.id !== TOOL_MAGNIFIER &&
-								selected_tool.id !== TOOL_POLYGON &&
-								selected_tool.id !== TOOL_CURVE
-							);
-						if (is_drag) {
-							gaze_dragging = hover_candidate.target;
-						} else {
-							$(hover_candidate.target).trigger($.Event("pointerup", Object.assign(get_event_options(hover_candidate), {
-								button: 0,
-								buttons: 0,
-							})));
-							if (hover_candidate.target.matches("button:not(.toggle)")) {
-								((button)=> {
-									button.style.borderImage = "var(--inset-deep-border-image)";
-									setTimeout(()=> {
-										button.style.borderImage = "";
-										// delay the button click to here so the pressed state is
-										// visible even when the button closes a dialog
-										button.click();
-									}, 100);
-								})(hover_candidate.target);
-							} else {
-								hover_candidate.target.click();
-								if (hover_candidate.target.matches("input, textarea")) {
-									hover_candidate.target.focus();
-								}
-							}
-						}
-					}
-					hover_candidate = null;
-					deactivate_for_at_least(inactive_after_hovered_timespan);
-				}
-			}
-
-			if (gaze_dragging) {
-				$dwell_indicator.addClass("for-release");
-			} else {
-				$dwell_indicator.removeClass("for-release");
-			}
-			$dwell_indicator.show().css({
-				opacity: circle_opacity,
-				transform: `scale(${circle_radius / circle_radius_max})`,
-				left: circle_position.x - circle_radius_max/2,
-				top: circle_position.y - circle_radius_max/2,
-			});
-
-			let halo_target =
-				gaze_dragging ||
-				(hover_candidate || get_hover_candidate(latest_point.x, latest_point.y) || {}).target;
-			
-			if (halo_target && (!paused || $pause_button.is(halo_target))) {
-				let rect = halo_target.getBoundingClientRect();
-				// Clamp to visible region if in scrollable area
-				// (could generalize to look for overflow: auto parents in the future)
-				if (halo_target.closest(".canvas-area")) {
-					const scroll_area_rect = $canvas_area[0].getBoundingClientRect();
-					rect = {
-						left: Math.max(rect.left, scroll_area_rect.left),
-						top: Math.max(rect.top, scroll_area_rect.top),
-						right: Math.min(rect.right, scroll_area_rect.right),
-						bottom: Math.min(rect.bottom, scroll_area_rect.bottom),
-					};
-					rect.width = rect.right - rect.left;
-					rect.height = rect.bottom - rect.top;
-				}
-				// this is so overkill just for border radius mimicry
-				const computed_style = getComputedStyle(halo_target);
-				const border_radius_scale = parseInt(
-					(
-						$(halo_target).closest(".component").css("transform") || ""
-					).match(/\d+/) || 1
-				);
-				$halo.css({
-					display: "block",
-					position: "fixed",
-					left: rect.left,
-					top: rect.top,
-					width: rect.width,
-					height: rect.height,
-					// shorthand properties might not work in all browsers (not tested)
-					// this is so overkill...
-					borderTopRightRadius: parseFloat(computed_style.borderTopRightRadius) * border_radius_scale,
-					borderTopLeftRadius: parseFloat(computed_style.borderTopLeftRadius) * border_radius_scale,
-					borderBottomRightRadius: parseFloat(computed_style.borderBottomRightRadius) * border_radius_scale,
-					borderBottomLeftRadius: parseFloat(computed_style.borderBottomLeftRadius) * border_radius_scale,
-				});
-			} else {
-				$halo.hide();
-			}
-
-			if (time < inactive_until_time) {
-				return;
-			}
-			if (recent_movement_amount < 5) {
-				if (!hover_candidate) {
-					hover_candidate = {
-						x: average_point.x,
-						y: average_point.y,
-						time: Date.now(),
-						target: gaze_dragging || null,
-					};
-					if (!gaze_dragging) {
-						hover_candidate = get_hover_candidate(hover_candidate.x, hover_candidate.y);
-					}
-					if (hover_candidate && (paused && !$pause_button.is(hover_candidate.target))) {
-						hover_candidate = null;
-					}
-				}
-			}
-			if (recent_movement_amount > 100) {
-				if (gaze_dragging) {
-					$G.trigger($.Event("pointerup", Object.assign(get_event_options(average_point), {
-						button: 0,
-						buttons: 0,
-					})));
-					pointers = []; // prevent multi-touch panning
-				}
-			}
-			if (recent_movement_amount > 60) {
-				hover_candidate = null;
-			}
-		}
-	};
-	let raf_id;
-	const animate = ()=> {
-		raf_id = requestAnimationFrame(animate);
-		update();
-	};
-	raf_id = requestAnimationFrame(animate);
-
-	const $floating_buttons =
-		$("<div/>")
-		.appendTo("body")
-		.css({
-			position: "fixed",
-			bottom: 0,
-			left: 0,
-			transformOrigin: "bottom left",
-			transform: "scale(3)",
-		});
-	
-	$("<button title='Undo'/>")
-	.on("click", undo)
-	.appendTo($floating_buttons)
-	.css({
-		width: 28,
-		height: 28,
-		verticalAlign: "bottom",
-		position: "relative", // to make the icon's "absolute" relative to here
-	})
-	.append(
-		$("<div>")
-		.css({
-			position: "absolute",
-			left: 0,
-			top: 0,
-			width: 24,
-			height: 24,
-			backgroundImage: "url(images/classic/undo.svg)",
-		})
-	);
-
-	// These are matched on exactly for speech recognition synonymization
-	const pause_button_text = "Pause Dwell Clicking";
-	const resume_button_text = "Resume Dwell Clicking";
-
-	$pause_button = $(`<button title="${pause_button_text}"/>`)
-	.on("click", ()=> {
-		paused = !paused;
-		$pause_button
-		.attr("title", paused ? resume_button_text : pause_button_text)
-		.find("div").css({
-			backgroundImage:
-				paused ?
-				"url(images/classic/eye-gaze-unpause.svg)" :
-				"url(images/classic/eye-gaze-pause.svg)",
-		});
-	})
-	.appendTo($floating_buttons)
-	.css({
-		width: 28,
-		height: 28,
-		verticalAlign: "bottom",
-		position: "relative", // to make the icon's "absolute" relative to here
-	})
-	.append(
-		$("<div>")
-		.css({
-			position: "absolute",
-			left: 0,
-			top: 0,
-			width: 24,
-			height: 24,
-			backgroundImage: "url(images/classic/eye-gaze-pause.svg)",
-		})
-	);
-
-	clean_up_eye_gaze_mode = ()=> {
-		console.log("Cleaning up / disabling eye gaze mode");
-		cancelAnimationFrame(raf_id);
-		$halo.remove();
-		$dwell_indicator.remove();
-		$floating_buttons.remove();
-		$G.off("pointermove", on_pointer_move);
-		$G.off("pointerup pointercancel", on_pointer_up_or_cancel);
-		$G.off("focus", on_focus);
-		$G.off("blur", on_blur);
-		$(document).off("mouseleave", on_mouse_leave_page);
-		$(document).off("mouseenter", on_mouse_enter_page);
-		clean_up_eye_gaze_mode = ()=> {};
-	};
-}
-
-let pan_start_pos;
-let pan_start_scroll_top;
-let pan_start_scroll_left;
+// #region Panning and Zooming
+let last_zoom_pointer_distance;
+let pan_last_pos;
+// let pan_start_magnification; // for panning and zooming in the same gesture (...was this ever used?)
+let first_pointer_time;
+const discard_quick_undo_period = 500; // milliseconds in which to treat gesture as just a pan/zoom if you use two fingers, rather than treating it as a brush stroke you might care about
 function average_points(points) {
-	const average = {x: 0, y: 0};
+	const average = { x: 0, y: 0 };
 	for (const pointer of points) {
 		average.x += pointer.x;
 		average.y += pointer.y;
@@ -1380,14 +1503,18 @@ function average_points(points) {
 	average.y /= points.length;
 	return average;
 }
-$canvas_area.on("pointerdown", (event)=> {
-	if (document.activeElement && document.activeElement !== document.body && document.activeElement !== document.documentElement) {
+$canvas_area.on("pointerdown", (event) => {
+	if (
+		document.activeElement instanceof HTMLElement && // exists and (for type checker:) has blur()
+		document.activeElement !== document.body &&
+		document.activeElement !== document.documentElement
+	) {
 		// Allow unfocusing dialogs etc. in order to use keyboard shortcuts
 		document.activeElement.blur();
 	}
 
-	if (pointers.every((pointer)=>
-		// prevent multitouch panning in case of synthetic events from eye gaze mode
+	if (pointers.every((pointer) =>
+		// prevent multitouch panning in case of synthetic events from Dwell Clicker
 		pointer.pointerId !== 1234567890 &&
 		// prevent multitouch panning in case of dragging across iframe boundary with a mouse/pen
 		// Note: there can be multiple active primary pointers, one per pointer type
@@ -1398,31 +1525,38 @@ $canvas_area.on("pointerdown", (event)=> {
 			pointerId: event.pointerId,
 			pointerType: event.pointerType,
 			// isPrimary not available on jQuery.Event, and originalEvent not available in synthetic case
+			// @ts-ignore
 			isPrimary: event.originalEvent && event.originalEvent.isPrimary || event.isPrimary,
 			x: event.clientX,
 			y: event.clientY,
 		});
 	}
-
+	if (pointers.length === 1) {
+		first_pointer_time = performance.now();
+	}
 	if (pointers.length == 2) {
-		pan_start_pos = average_points(pointers);
-		pan_start_scroll_top = $canvas_area.scrollTop();
-		pan_start_scroll_left = $canvas_area.scrollLeft();
+		last_zoom_pointer_distance = Math.hypot(pointers[0].x - pointers[1].x, pointers[0].y - pointers[1].y);
+		pan_last_pos = average_points(pointers);
+		// pan_start_magnification = magnification;
 	}
 	// Quick Undo when there are multiple pointers (i.e. for touch)
-	// see pointermove for other pointer types
+	// See pointermove for other pointer types
+	// SEE OTHER POINTERDOWN HANDLER ALSO
 	if (pointers.length >= 2) {
-		cancel();
-		pointer_active = false; // NOTE: pointer_active used in cancel()
+		// If you press two fingers quickly, it shouldn't make a new history entry.
+		// But if you draw something and then press a second finger to clear it, it should let you redo.
+		const discard_document_state = first_pointer_time && performance.now() - first_pointer_time < discard_quick_undo_period;
+		cancel(false, discard_document_state);
+		pointer_active = false; // NOTE: pointer_active used in cancel(); must be set after cancel()
 		return;
 	}
 });
-$G.on("pointerup pointercancel", (event)=> {
-	pointers = pointers.filter((pointer)=>
+$G.on("pointerup pointercancel", (event) => {
+	pointers = pointers.filter((pointer) =>
 		pointer.pointerId !== event.pointerId
 	);
 });
-$G.on("pointermove", (event)=> {
+$G.on("pointermove", (event) => {
 	for (const pointer of pointers) {
 		if (pointer.pointerId === event.pointerId) {
 			pointer.x = event.clientX;
@@ -1431,52 +1565,73 @@ $G.on("pointermove", (event)=> {
 	}
 	if (pointers.length >= 2) {
 		const current_pos = average_points(pointers);
-		const difference_in_x = current_pos.x - pan_start_pos.x;
-		const difference_in_y = current_pos.y - pan_start_pos.y;
-		$canvas_area.scrollLeft(pan_start_scroll_left - difference_in_x);
-		$canvas_area.scrollTop(pan_start_scroll_top - difference_in_y);
+		const distance = Math.hypot(pointers[0].x - pointers[1].x, pointers[0].y - pointers[1].y);
+		const difference_in_distance = distance - last_zoom_pointer_distance;
+		let new_magnification = magnification;
+		if (Math.abs(difference_in_distance) > 60) {
+			last_zoom_pointer_distance = distance;
+			if (difference_in_distance > 0) {
+				new_magnification *= 1.5;
+			} else {
+				new_magnification /= 1.5;
+			}
+		}
+		new_magnification = Math.max(0.5, Math.min(new_magnification, 40));
+		if (new_magnification != magnification) {
+			set_magnification(new_magnification, to_canvas_coords({ clientX: current_pos.x, clientY: current_pos.y }));
+		}
+		const difference_in_x = current_pos.x - pan_last_pos.x;
+		const difference_in_y = current_pos.y - pan_last_pos.y;
+		$canvas_area.scrollLeft($canvas_area.scrollLeft() - difference_in_x);
+		$canvas_area.scrollTop($canvas_area.scrollTop() - difference_in_y);
+		pan_last_pos = current_pos;
 	}
 });
+// #endregion
 
-// window.onerror = show_error_message;
-
-$canvas.on("pointerdown", e => {
+// #region Primary Canvas Interaction (continued)
+$canvas.on("pointerdown", (e) => {
 	update_canvas_rect();
 
 	// Quick Undo when there are multiple pointers (i.e. for touch)
 	// see pointermove for other pointer types
+	// SEE OTHER POINTERDOWN HANDLER ALSO
 	// NOTE: this relies on event handler order for pointerdown
 	// pointer is not added to pointers yet
-	if(pointers.length >= 1){
-		cancel();
-		pointer_active = false; // NOTE: pointer_active used in cancel()
-		// in eye gaze mode, allow drawing with mouse after canceling gaze gesture with mouse
-		pointers = pointers.filter((pointer)=>
+	if (pointers.length >= 1) {
+		// If you press two fingers quickly, it shouldn't make a new history entry.
+		// But if you draw something and then press a second finger to clear it, it should let you redo.
+		const discard_document_state = first_pointer_time && performance.now() - first_pointer_time < discard_quick_undo_period;
+		cancel(false, discard_document_state);
+		pointer_active = false; // NOTE: pointer_active used in cancel(); must be set after cancel()
+
+		// in Dwell Clicker mode, allow drawing with mouse after canceling dwell gesture with mouse
+		pointers = pointers.filter((pointer) =>
 			pointer.pointerId !== 1234567890
 		);
 		return;
 	}
 
 	history_node_to_cancel_to = current_history_node;
-	
+
 	pointer_active = !!(e.buttons & (1 | 2)); // as far as tools are concerned
 	pointer_type = e.pointerType;
 	pointer_buttons = e.buttons;
-	$G.one("pointerup", ()=> {
+	$G.one("pointerup", (e) => {
 		pointer_active = false;
-		update_helper_layer();
-		
+		update_helper_layer(e);
+
 		if (!pointer_over_canvas && update_helper_layer_on_pointermove_active) {
 			$G.off("pointermove", update_helper_layer);
 			update_helper_layer_on_pointermove_active = false;
 		}
 	});
-	
-	if(e.button === 0){
+
+	if (e.button === 0) {
 		reverse = false;
-	}else if(e.button === 2){
+	} else if (e.button === 2) {
 		reverse = true;
-	}else{
+	} else {
 		return;
 	}
 
@@ -1487,12 +1642,12 @@ $canvas.on("pointerdown", e => {
 
 	const pointerdown_action = () => {
 		let interval_ids = [];
-		selected_tools.forEach((selected_tool)=> {
-			if(selected_tool.paint || selected_tool.pointerdown){
+		selected_tools.forEach((selected_tool) => {
+			if (selected_tool.paint || selected_tool.pointerdown) {
 				tool_go(selected_tool, "pointerdown");
 			}
-			if(selected_tool.paint_on_time_interval != null){
-				interval_ids.push(setInterval(()=> {
+			if (selected_tool.paint_on_time_interval != null) {
+				interval_ids.push(setInterval(() => {
 					tool_go(selected_tool);
 				}, selected_tool.paint_on_time_interval));
 			}
@@ -1500,14 +1655,20 @@ $canvas.on("pointerdown", e => {
 
 		$G.on("pointermove", canvas_pointer_move);
 
-		$G.one("pointerup", (e, canceling) => {
+		$G.one("pointerup", (e, canceling, no_undoable) => {
 			button = undefined;
 			reverse = false;
 
-			pointer = to_canvas_coords(e);
-			selected_tools.forEach((selected_tool)=> {
-				selected_tool.pointerup && selected_tool.pointerup(ctx, pointer.x, pointer.y);
-			});
+			if (e.clientX !== undefined) { // may be synthetic event without coordinates
+				pointer = to_canvas_coords(e);
+			}
+			// don't create undoables if you're two-finger-panning
+			// @TODO: do any tools use pointerup for cleanup?
+			if (!no_undoable) {
+				selected_tools.forEach((selected_tool) => {
+					selected_tool.pointerup?.(main_ctx, pointer.x, pointer.y);
+				});
+			}
 
 			if (selected_tools.length === 1) {
 				if (selected_tool.deselect) {
@@ -1526,14 +1687,16 @@ $canvas.on("pointerdown", e => {
 	};
 
 	pointerdown_action();
-	
-	update_helper_layer();
-});
 
-$canvas_area.on("pointerdown", e => {
-	if(e.button === 0){
-		if($canvas_area.is(e.target)){
-			if(selection){
+	update_helper_layer(e);
+});
+// #endregion
+
+// #region Deselection / Selection Prevention
+$canvas_area.on("pointerdown", (e) => {
+	if (e.button === 0) {
+		if ($canvas_area.is(e.target)) {
+			if (selection) {
 				deselect();
 			}
 		}
@@ -1542,18 +1705,18 @@ $canvas_area.on("pointerdown", e => {
 
 function prevent_selection($el) {
 	$el.on("mousedown selectstart contextmenu", (e) => {
-		if(e.isDefaultPrevented()){
+		if (e.isDefaultPrevented()) {
 			return;
 		}
-		if(
+		if (
 			e.target instanceof HTMLSelectElement ||
 			e.target instanceof HTMLTextAreaElement ||
 			(e.target instanceof HTMLLabelElement && e.type !== "contextmenu") ||
 			(e.target instanceof HTMLInputElement && e.target.type !== "color")
-		){
+		) {
 			return;
 		}
-		if(e.button === 1){
+		if (e.button === 1) {
 			return; // allow middle-click scrolling
 		}
 		e.preventDefault();
@@ -1568,8 +1731,57 @@ prevent_selection($app);
 prevent_selection($toolbox);
 // prevent_selection($toolbox2);
 prevent_selection($colorbox);
+// #endregion
 
-// Stop drawing (or dragging or whatver) if you Alt+Tab or whatever
+// Stop drawing (or dragging or whatever) if you Alt+Tab or whatever
 $G.on("blur", () => {
 	$G.triggerHandler("pointerup");
 });
+
+// #region Fullscreen Handling for iOS
+// For Safari on iPad, Fullscreen mode overlays the system bar, completely obscuring our menu bar.
+// See CSS .fullscreen handling (and exit_fullscreen_if_ios) for more info.
+function iOS() {
+	return (
+		[
+			"iPad Simulator",
+			"iPhone Simulator",
+			"iPod Simulator",
+			"iPad",
+			"iPhone",
+			"iPod",
+		].includes(navigator.platform) ||
+		// iPad on iOS 13 detection
+		(navigator.userAgent.includes("Mac") && "ontouchend" in document)
+	);
+}
+$("html").toggleClass("ios", iOS());
+$G.on("fullscreenchange webkitfullscreenchange", () => {
+	// const fullscreen = $G.is(":fullscreen") || $G.is(":-webkit-full-screen"); // gives "Script error."
+	const fullscreen = !!(document.fullscreenElement || document.webkitFullscreenElement);
+	// $status_text.text(`fullscreen: ${fullscreen}`);
+	$("html").toggleClass("fullscreen", fullscreen);
+});
+// #endregion
+
+// #region Testing Helpers
+// Note: this is defined here so the app is loaded when this is defined.
+window.api_for_cypress_tests = {
+	reset_for_next_test() {
+		selected_colors.foreground = "#000";
+		selected_colors.background = "#fff";
+		brush_shape = default_brush_shape;
+		brush_size = default_brush_size;
+		eraser_size = default_eraser_size;
+		airbrush_size = default_airbrush_size;
+		pencil_size = default_pencil_size;
+		stroke_size = default_stroke_size;
+		clear();
+	},
+	selected_colors,
+	set_theme,
+	$,
+};
+// #endregion
+
+init_webgl_stuff();

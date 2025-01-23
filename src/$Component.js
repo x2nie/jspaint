@@ -1,3 +1,9 @@
+// @ts-check
+/* global $bottom, $canvas, $left, $right, $top, get_direction */
+
+import { $ToolWindow } from "./$ToolWindow.js";
+// import { get_direction } from "./app-localization.js";
+import { $G, E } from "./helpers.js";
 
 // Segments here represent UI components as far as a layout algorithm is concerned,
 // line segments in one dimension (regardless of whether that dimension is vertical or horizontal),
@@ -5,8 +11,8 @@
 
 function get_segments(component_area_el, pos_axis, exclude_component_el) {
 	const $other_components = $(component_area_el).find(".component").not(exclude_component_el);
-	return $other_components.toArray().map((component_el)=> {
-		const segment = {element: component_el};
+	return $other_components.toArray().map((component_el) => {
+		const segment = { element: component_el };
 		if (pos_axis === "top") {
 			segment.pos = component_el.offsetTop;
 			segment.length = component_el.clientHeight;
@@ -22,7 +28,7 @@ function get_segments(component_area_el, pos_axis, exclude_component_el) {
 }
 
 function adjust_segments(segments, total_available_length) {
-	segments.sort((a, b)=> a.pos - b.pos);
+	segments.sort((a, b) => a.pos - b.pos);
 
 	// Clamp
 	for (const segment of segments) {
@@ -72,43 +78,93 @@ function apply_segments(component_area_el, pos_axis, segments) {
 	}
 }
 
-function $Component(title, className, orientation, $el){
+/**
+ * @param {string} title
+ * @param {string} className
+ * @param {"tall" | "wide"} orientation
+ * @param {JQuery<HTMLElement>} $el
+ * @returns {JQuery<HTMLDivElement> & I$Component}
+ */
+function $Component(title, className, orientation, $el) {
 	// A draggable widget that can be undocked into a window
-	const $c = $(E("div")).addClass("component");
+	const $c = /** @type {JQuery<HTMLDivElement> & I$Component} */ ($(E("div")).addClass("component"));
 	$c.addClass(className);
 	$c.addClass(orientation);
 	$c.append($el);
-	$c.attr("touch-action", "none");
-	
-	const $w = new $ToolWindow($c);
+	$c.css("touch-action", "none");
+
+	const $w = $ToolWindow($c);
 	$w.title(title);
 	$w.hide();
 	$w.$content.addClass({
 		tall: "vertical",
 		wide: "horizontal",
 	}[orientation]);
-	
+
 	// Nudge the Colors component over a tiny bit
-	if(className === "colors-component" && orientation === "wide"){
+	if (className === "colors-component" && orientation === "wide") {
 		$c.css("position", "relative");
-		$c.css(get_direction() === "rtl" ? "right" : "left", "3px");
+		$c.css(`margin-${get_direction() === "rtl" ? "right" : "left"}`, "3px");
 	}
 
+	const apply_scale = () => {
+		const enabled = $("body").hasClass("enlarge-ui");
+
+		// Temporarily disable the transform to measure the unscaled size
+		// (Previously used scrollWidth/scrollHeight, which is naturally unaffected by the scale,
+		// but that is affected by the advent calendar style tool button flaps in the Winter theme.)
+		$c.css("transform", "none");
+
+		// Measure the untransformed size
+		const containerBounds = $c[0].getBoundingClientRect();
+		const containerWidth = containerBounds.width;
+		const containerHeight = containerBounds.height;
+
+		// Define CSS properties for scaling
+		let scale = 3;
+		const docked = $c.parent().is(".component-area");
+		if (docked) {
+			scale = Math.min(scale,
+				orientation === "tall" ?
+					$c.parent().height() / containerHeight :
+					$c.parent().width() / containerWidth
+			);
+		}
+		const props = {
+			// The `transform` breaks the overflow of the Winter theme's tool button flaps, but what are you going to do?
+			// Well, `zIndex: 2` or higher seems to fix it, probably competing with the .main-canvas's z-index of 2,
+			// but causes other problems, like depth ordering with the floating undo button,
+			// and there's probably a reason for the .main-canvas having that z-index, and I don't really want to play z-index wack-a-mole.
+			// zIndex: 2, // @#: z-index
+			transform: `scale(${scale})`,
+			transformOrigin: "0 0",
+			marginRight: containerWidth * (scale - 1),
+			marginBottom: containerHeight * (scale - 1),
+		};
+
+		// Apply or remove the scaling
+		if (enabled) {
+			$c.css(props);
+		} else {
+			for (const key in props) {
+				$c.css(key, "");
+			}
+		}
+	};
 	let iid;
-	if($("body").hasClass("eye-gaze-mode")){
-		// @TODO: don't use an interval for this!
-		iid = setInterval(()=> {
-			const scale = 3;
-			$c.css({
-				transform: `scale(${scale})`,
-				transformOrigin: "0 0",
-				marginRight: $c[0].scrollWidth * (scale - 1),
-				marginBottom: $c[0].scrollHeight * (scale - 1),
-			});
-		}, 200);
-	}
-	
+	const update_auto_scaling = () => {
+		clearInterval(iid);
+		if ($("body").hasClass("enlarge-ui")) {
+			// @TODO: don't use an interval for this!
+			iid = setInterval(apply_scale, 200);
+		}
+		apply_scale();
+	};
+	$G.on("enlarge-ui-toggled", update_auto_scaling);
+	update_auto_scaling();
+
 	let ox, oy;
+	let ox2, oy2;
 	let w, h;
 	let pos = 0;
 	let pos_axis;
@@ -116,16 +172,19 @@ function $Component(title, className, orientation, $el){
 	let $last_docked_to;
 	let $dock_to;
 	let $ghost;
-	
-	if(orientation === "tall"){
+
+	if (orientation === "tall") {
 		pos_axis = "top";
-	}else if(get_direction() === "rtl"){
+	} else if (get_direction() === "rtl") {
 		pos_axis = "right";
-	}else{
+	} else {
 		pos_axis = "left";
 	}
-	
-	const dock_to = $dock_to => {
+
+	/**
+	 * @param {JQuery<HTMLElement>} $dock_to
+	 */
+	const dock_to = ($dock_to) => {
 		$w.hide();
 
 		// must get layout state *before* changing it
@@ -144,154 +203,246 @@ function $Component(title, className, orientation, $el){
 		// console.log("before adjustment", JSON.stringify(segments, (_key,val)=> (val instanceof Element) ? val.className : val));
 		adjust_segments(segments, total_available_length);
 		// console.log("after adjustment", JSON.stringify(segments, (_key,val)=> (val instanceof Element) ? val.className : val));
-		
+
 		apply_segments($dock_to[0], pos_axis, segments);
 
 		// Save where it's now docked to
 		$last_docked_to = $dock_to;
 		last_docked_to_pos = pos;
 	};
-	
-	$c.on("pointerdown", e => {
-		// Only start a drag via a left click directly on the component element
-		if(e.button !== 0){ return; }
-		if(!$c.is(e.target)){ return; }
-		// Don't allow dragging in eye gaze mode
-		if($("body").hasClass("eye-gaze-mode")){ return; }
-		
-		$G.on("pointermove", drag_update_position);
-		$G.one("pointerup", e => {
-			$G.off("pointermove", drag_update_position);
-			drag_onpointerup(e);
+	/**
+	 * @param {number} x
+	 * @param {number} y
+	 */
+	const undock_to = (x, y) => {
+		const component_area_el = $c.closest(".component-area")[0];
+		// must get layout state *before* changing it
+		const segments = get_segments(component_area_el, pos_axis, $c[0]);
+
+		$c.css("position", "relative");
+		$c.css(`margin-${pos_axis}`, "");
+
+		// Put the component in the window
+		$w.$content.append($c);
+		// Show and position the window
+		$w.show();
+		$w.css({
+			left: x,
+			top: y,
 		});
-		
-		const rect = $c[0].getBoundingClientRect();
+
+		const total_available_length = pos_axis === "top" ? $(component_area_el).height() : $(component_area_el).width();
+		// console.log("before adjustment", JSON.stringify(segments, (_key,val)=> (val instanceof Element) ? val.className : val));
+		adjust_segments(segments, total_available_length);
+		// console.log("after adjustment", JSON.stringify(segments, (_key,val)=> (val instanceof Element) ? val.className : val));
+		apply_segments(component_area_el, pos_axis, segments);
+	};
+
+	$w.on("window-drag-start", (e) => {
+		e.preventDefault();
+	});
+	const size_css_props = (styles) => {
+		const scale_match = styles.transform.match(/(?:scale|matrix)\((\d+(?:\.\d+)?)/);
+		const scale = Number((scale_match ?? [])[1] ?? "1");
+		return {
+			width: `calc(${styles.width} * ${scale})`,
+			height: `calc(${styles.height} * ${scale})`,
+			// don't copy margin, margin is actually used for positioning the components in the docking areas
+			// don't copy padding, padding changes based on whether the component is in a window in modern theme
+			// let padding be influenced by CSS
+		};
+	};
+	const imagine_window_dimensions = () => {
+		const prev_window_shown = $w.is(":visible");
+		$w.show();
+		let $spacer;
+		let { offsetLeft, offsetTop } = $c[0];
+		if ($c.closest(".tool-window").length == 0) {
+			const styles = getComputedStyle($c[0]);
+			$spacer = $(E("div")).addClass("component").css(size_css_props(styles));
+			$w.append($spacer);
+			({ offsetLeft, offsetTop } = $spacer[0]);
+		}
+		const rect = $w[0].getBoundingClientRect();
+		if ($spacer) {
+			$spacer.remove();
+		}
+		if (!prev_window_shown) {
+			$w.hide();
+		}
+		const w_styles = getComputedStyle($w[0]);
+		offsetLeft += parseFloat(w_styles.borderLeftWidth);
+		offsetTop += parseFloat(w_styles.borderTopWidth);
+		return { rect, offsetLeft, offsetTop };
+	};
+	const imagine_docked_dimensions = ($dock_to = (pos_axis === "top" ? $left : $bottom)) => {
+		if ($c.closest(".tool-window").length == 0) {
+			return { rect: $c[0].getBoundingClientRect() };
+		}
+		const styles = getComputedStyle($c[0]);
+		const $spacer = $(E("div")).addClass("component").css({
+			...size_css_props(styles),
+			flex: "0 0 auto",
+		});
+		$dock_to.prepend($spacer);
+		const rect = $spacer[0].getBoundingClientRect();
+		if ($spacer) {
+			$spacer.remove();
+		}
+		return { rect };
+	};
+	const render_ghost = (e) => {
+
+		const { rect } = $dock_to ? imagine_docked_dimensions($dock_to) : imagine_window_dimensions();
+
 		// Make sure these dimensions are odd numbers
 		// so the alternating pattern of the border is unbroken
-		w = (~~(rect.width/2))*2 + 1;
-		h = (~~(rect.height/2))*2 + 1;
-		ox = rect.left - e.clientX;
-		oy = rect.top - e.clientY;
-		
-		if(!$ghost){
+		w = (~~(rect.width / 2)) * 2 + 1;
+		h = (~~(rect.height / 2)) * 2 + 1;
+
+		if (!$ghost) {
 			$ghost = $(E("div")).addClass("component-ghost dock");
-			$ghost.css({
-				position: "absolute",
-				display: "block",
-				width: w,
-				height: h,
-				left: e.clientX + ox,
-				top: e.clientY + oy
-			});
 			$ghost.appendTo("body");
 		}
+		const inset = $dock_to ? 0 : 3;
+		$ghost.css({
+			position: "absolute",
+			display: "block",
+			width: w - inset * 2,
+			height: h - inset * 2,
+			left: e.clientX + ($dock_to ? ox : ox2) + inset,
+			top: e.clientY + ($dock_to ? oy : oy2) + inset,
+		});
 
+		if ($dock_to) {
+			$ghost.addClass("dock");
+		} else {
+			$ghost.removeClass("dock");
+		}
+	};
+	$c.add($w.$titlebar).on("pointerdown", (e) => {
+		// Only start a drag via a left click directly on the component element or titlebar
+		if (e.button !== 0) { return; }
+		const validTarget =
+			$c.is(e.target) ||
+			(
+				$(e.target).closest($w.$titlebar).length > 0 &&
+				$(e.target).closest("button").length === 0
+			);
+		if (!validTarget) { return; }
+
+		const docked = imagine_docked_dimensions();
+		const rect = $c[0].getBoundingClientRect();
+		ox = rect.left - e.clientX;
+		oy = rect.top - e.clientY;
+		ox = -Math.min(Math.max(-ox, 0), docked.rect.width);
+		oy = -Math.min(Math.max(-oy, 0), docked.rect.height);
+
+		const { offsetLeft, offsetTop } = imagine_window_dimensions();
+		ox2 = rect.left - offsetLeft - e.clientX;
+		oy2 = rect.top - offsetTop - e.clientY;
+
+		$("body").addClass("dragging");
+		$("body").css({ cursor: "default" }).addClass("cursor-bully");
+
+		$G.on("pointermove", drag_update_position);
+		$G.one("pointerup", (e) => {
+			$G.off("pointermove", drag_update_position);
+			drag_onpointerup(e);
+			$("body").removeClass("dragging");
+			$("body").css({ cursor: "" }).removeClass("cursor-bully");
+			$canvas.trigger("pointerleave"); // prevent magnifier preview showing until you move the mouse
+		});
+
+		render_ghost(e);
 		drag_update_position(e);
-		
+
 		// Prevent text selection anywhere within the component
 		e.preventDefault();
 	});
-	const drag_update_position = e => {
-		
+	const drag_update_position = (e) => {
+
 		$ghost.css({
 			left: e.clientX + ox,
 			top: e.clientY + oy,
 		});
-		
+
 		$dock_to = null;
-		
-		const ghost_rect = $ghost[0].getBoundingClientRect();
+
+		const { width, height } = imagine_docked_dimensions().rect;
+		const dock_ghost_left = e.clientX + ox;
+		const dock_ghost_top = e.clientY + oy;
+		const dock_ghost_right = dock_ghost_left + width;
+		const dock_ghost_bottom = dock_ghost_top + height;
 		const q = 5;
-		if(orientation === "tall"){
+		if (orientation === "tall") {
 			pos_axis = "top";
-			if(ghost_rect.left-q < $left[0].getBoundingClientRect().right){
+			if (dock_ghost_left - q < $left[0].getBoundingClientRect().right) {
 				$dock_to = $left;
 			}
-			if(ghost_rect.right+q > $right[0].getBoundingClientRect().left){
+			if (dock_ghost_right + q > $right[0].getBoundingClientRect().left) {
 				$dock_to = $right;
 			}
-		}else{
+		} else {
 			pos_axis = get_direction() === "rtl" ? "right" : "left";
-			if(ghost_rect.top-q < $top[0].getBoundingClientRect().bottom){
+			if (dock_ghost_top - q < $top[0].getBoundingClientRect().bottom) {
 				$dock_to = $top;
 			}
-			if(ghost_rect.bottom+q > $bottom[0].getBoundingClientRect().top){
+			if (dock_ghost_bottom + q > $bottom[0].getBoundingClientRect().top) {
 				$dock_to = $bottom;
 			}
 		}
-		
-		if($dock_to){
+
+		if ($dock_to) {
 			const dock_to_rect = $dock_to[0].getBoundingClientRect();
-			pos = ghost_rect[pos_axis] - dock_to_rect[pos_axis];
+			pos = (
+				pos_axis === "top" ? dock_ghost_top : pos_axis === "right" ? dock_ghost_right : dock_ghost_left
+			) - dock_to_rect[pos_axis];
 			if (pos_axis === "right") {
 				pos *= -1;
 			}
-			$ghost.addClass("dock");
-		}else{
-			$ghost.removeClass("dock");
 		}
-		
+
+		render_ghost(e);
+
 		e.preventDefault();
 	};
-	
-	const drag_onpointerup = e => {
-		
+
+	const drag_onpointerup = (e) => {
+
 		$w.hide();
-		
+
 		// If the component is docked to a component area (a side)
-		if($c.parent().is(".component-area")){
+		if ($c.parent().is(".component-area")) {
 			// Save where it's docked so we can dock back later
 			$last_docked_to = $c.parent();
-			if($dock_to){
+			if ($dock_to) {
 				last_docked_to_pos = pos;
 			}
 		}
-		
-		if($dock_to){
+
+		if ($dock_to) {
 			// Dock component to $dock_to
 			dock_to($dock_to);
-		}else{
-			const component_area_el = $c.closest(".component-area")[0];
-			// must get layout state *before* changing it
-			const segments = get_segments(component_area_el, pos_axis, $c[0]);
-			
-			$c.css("position", "relative");
-			$c.css(`margin-${pos_axis}`, "");
-
-			// Put the component in the window
-			$w.$content.append($c);
-			// Show and position the window
-			$w.show();
-			const window_rect = $w[0].getBoundingClientRect();
-			const window_content_rect = $w.$content[0].getBoundingClientRect();
-			const dx = window_content_rect.left - window_rect.left;
-			const dy = window_content_rect.top - window_rect.top;
-			$w.css({
-				left: e.clientX + ox - dx,
-				top: e.clientY + oy - dy,
-			});
-
-			const total_available_length = pos_axis === "top" ? $(component_area_el).height() : $(component_area_el).width();
-			// console.log("before adjustment", JSON.stringify(segments, (_key,val)=> (val instanceof Element) ? val.className : val));
-			adjust_segments(segments, total_available_length);
-			// console.log("after adjustment", JSON.stringify(segments, (_key,val)=> (val instanceof Element) ? val.className : val));
-			apply_segments(component_area_el, pos_axis, segments);
+		} else {
+			undock_to(e.clientX + ox2, e.clientY + oy2);
 		}
-		
-		$ghost && $ghost.remove();
+
+		$ghost?.remove();
 		$ghost = null;
-		
+
 		$G.trigger("resize");
 	};
-	
-	$c.dock = () => {
-		pos = last_docked_to_pos;
-		dock_to($last_docked_to);
+
+	$c.dock = ($dock_to) => {
+		pos = last_docked_to_pos ?? 0;
+		dock_to($dock_to ?? $last_docked_to);
 	};
-	
+	$c.undock_to = undock_to;
+
 	$c.show = () => {
 		$($c[0]).show(); // avoid recursion
-		if($.contains($w[0], $c[0])){
+		if ($.contains($w[0], $c[0])) {
 			$w.show();
 		}
 		return $c;
@@ -301,23 +452,26 @@ function $Component(title, className, orientation, $el){
 		return $c;
 	};
 	$c.toggle = () => {
-		if($c.is(":visible")){
+		if ($c.is(":visible")) {
 			$c.hide();
-		}else{
+		} else {
 			$c.show();
 		}
 		return $c;
 	};
-	$c.destroy = ()=> {
+	$c.destroy = () => {
 		$w.close();
 		$c.remove();
 		clearInterval(iid);
 	};
-	
-	$w.on("close", e => {
+
+	$w.on("close", (e) => {
 		e.preventDefault();
 		$w.hide();
 	});
-	
+
 	return $c;
 }
+
+export { $Component };
+
